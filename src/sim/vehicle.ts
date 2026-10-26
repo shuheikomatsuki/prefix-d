@@ -25,8 +25,10 @@ export interface VehicleParams {
   maxForwardSpeed: number;
   /** 後退の最高速度 [m/s] */
   maxReverseSpeed: number;
-  /** 発進時の加速度 [m/s^2]（最高速に近づくほど弱まる） */
+  /** 低速での加速度の上限 [m/s^2]（1速でタイヤが空転しない範囲の加速。実車でおよそ 0.35〜0.9G） */
   engineAccel: number;
+  /** 車重あたりの出力 [W/kg]（駆動輪に届く分）。速さ v での加速度は enginePower / v で、速いほど伸びなくなる */
+  enginePower: number;
   /** 後退時の加速度 [m/s^2] */
   reverseAccel: number;
   /** ブレーキの減速度 [m/s^2] */
@@ -52,7 +54,8 @@ export interface VehicleParams {
 export const DEFAULT_VEHICLE_PARAMS: Readonly<VehicleParams> = {
   maxForwardSpeed: 30,
   maxReverseSpeed: 7,
-  engineAccel: 10,
+  engineAccel: 5,
+  enginePower: 55,
   reverseAccel: 4,
   brakeDecel: 16,
   coastDecel: 0.8,
@@ -76,48 +79,78 @@ export interface VehiclePreset {
 
 /** 最高速度の余裕: maxForwardSpeed をこの割合だけ最高速度より高くし、空気抵抗と釣り合う速さを最高速度にする */
 const TOP_SPEED_HEADROOM = 1.1;
+/** maxForwardSpeed の手前この速さ [m/s] で、エンジンの加速をなくしていく */
+const TOP_FADE = 2;
 
 /**
- * アクセルを踏み続けて平らな直線で落ち着く速さ [m/s]（エンジンの加速と空気抵抗が釣り合う速さ）。
- * engineAccel (1 - v / maxForwardSpeed) = dragCoef v^2 を解く
+ * アクセル全開での、エンジンによる加速度 [m/s^2]（抵抗を引く前）。
+ * 低速ではタイヤのグリップ（engineAccel）、速くなると出力（enginePower / v）で決まる
  */
+export function driveAccelAt(speed: number, p: Readonly<VehicleParams>): number {
+  const v = Math.max(0, speed);
+  const fade = Math.min(1, Math.max(0, (p.maxForwardSpeed - v) / TOP_FADE));
+  return Math.min(p.engineAccel, p.enginePower / Math.max(v, 0.1)) * fade;
+}
+
+/** アクセルを踏み続けて平らな直線で落ち着く速さ [m/s]（エンジンの加速と空気抵抗が釣り合う速さ） */
 export function topSpeedOf(p: Readonly<VehicleParams>): number {
-  const b = p.engineAccel / p.maxForwardSpeed;
-  if (p.dragCoef <= 0) return p.maxForwardSpeed;
-  return (-b + Math.sqrt(b * b + 4 * p.dragCoef * p.engineAccel)) / (2 * p.dragCoef);
+  let lo = 0;
+  let hi = p.maxForwardSpeed;
+  for (let i = 0; i < 60; i++) {
+    const v = (lo + hi) / 2;
+    if (driveAccelAt(v, p) > p.dragCoef * v * v) lo = v;
+    else hi = v;
+  }
+  return lo;
+}
+
+/** 平らな直線で止まった状態からアクセル全開にして、速さ kmh [km/h] に届くまでの秒数（届かなければ Infinity） */
+export function accelTimeOf(p: Readonly<VehicleParams>, kmh = 100): number {
+  const dt = 1 / 120;
+  let s: VehicleState = { forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0 };
+  for (let t = dt; t < 120; t += dt) {
+    s = stepVehicle(s, { throttle: 1, brake: 0, steer: 0 }, p, dt);
+    if (s.forwardSpeed * 3.6 >= kmh) return t;
+  }
+  return Infinity;
 }
 
 /** 最高速度 topKmh [km/h] の車の性能（空気抵抗の係数を最高速度から決める） */
 function car(topKmh: number, p: Partial<VehicleParams>): VehicleParams {
   const params = { ...DEFAULT_VEHICLE_PARAMS, ...p };
   const v = topKmh / 3.6;
-  const maxForwardSpeed = v * TOP_SPEED_HEADROOM;
-  return { ...params, maxForwardSpeed, dragCoef: (params.engineAccel * (1 - v / maxForwardSpeed)) / (v * v) };
+  const withTop = { ...params, maxForwardSpeed: v * TOP_SPEED_HEADROOM };
+  return { ...withTop, dragCoef: driveAccelAt(v, withTop) / (v * v) };
 }
 
 /**
  * 選べる車（P キーで切り替え）。最高速度 [km/h] は、イニシャルDのアニメの場面（メーターの読み・直線での伸び・
- * 車どうしの差）と、それぞれの車のチューニングから見積もった値
+ * 車どうしの差）と、それぞれの車のチューニングから見積もった値。
+ * 加速（engineAccel・enginePower）は、実車の 0-100km/h の加速タイム（雑誌の計測やカタログの出力・車重）に、
+ * 作中のチューニングを少し足した値に合わせた（コメントの秒数）
  */
 export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
   {
     id: 'standard',
     label: '普通車',
     description: '扱いやすいふつうの車',
-    params: car(180, { engineAccel: 11.5 }),
+    // 0-100km/h 11秒
+    params: car(180, { engineAccel: 4, enginePower: 43 }),
   },
   {
     id: 'kei',
     label: '軽自動車',
     description: '遅いけれど小回りがきく',
-    params: car(140, { engineAccel: 8.5, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 }),
+    // 0-100km/h 14秒
+    params: car(140, { engineAccel: 3.5, enginePower: 37, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 }),
   },
   {
     id: 'cappuccino',
     label: 'カプチーノ',
     description: 'FR・軽のオープンカー。とても軽く、小さく鋭く曲がる',
     params: car(170, {
-      engineAccel: 11.5,
+      engineAccel: 4.5,
+      enginePower: 48, // 0-100km/h 10秒
       brakeDecel: 23,
       wheelBase: 2.06,
       maxSteerAngle: 0.64,
@@ -132,7 +165,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'AE85',
     description: 'FR・AE86の兄弟車。軽いが非力で、坂と直線は苦手',
     params: car(160, {
-      engineAccel: 10.5,
+      engineAccel: 4,
+      enginePower: 42, // 0-100km/h 11.5秒
       brakeDecel: 21,
       wheelBase: 2.4,
       maxSteerAngle: 0.62,
@@ -147,7 +181,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'AE86',
     description: 'FR・軽い。直線は遅いがコーナーは速い',
     params: car(210, {
-      engineAccel: 13,
+      engineAccel: 5,
+      enginePower: 59, // 0-100km/h 8秒
       brakeDecel: 23,
       wheelBase: 2.4,
       maxSteerAngle: 0.62,
@@ -162,7 +197,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'シビック (EG6)',
     description: 'FF・軽い。パワーは控えめだが曲がりやすい',
     params: car(215, {
-      engineAccel: 13.5,
+      engineAccel: 5.5,
+      enginePower: 69, // 0-100km/h 7秒
       brakeDecel: 22,
       wheelBase: 2.45,
       maxSteerAngle: 0.62,
@@ -177,7 +213,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'シビック (EK9)',
     description: 'FF・高回転のVTEC。軽くて立ち上がりが鋭い',
     params: car(225, {
-      engineAccel: 15,
+      engineAccel: 6,
+      enginePower: 73, // 0-100km/h 6.5秒
       brakeDecel: 23,
       wheelBase: 2.5,
       maxSteerAngle: 0.62,
@@ -192,7 +229,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'シルビア (S13)',
     description: 'FR・ターボ。パワーはそこそこで、お尻を流しやすい',
     params: car(220, {
-      engineAccel: 15,
+      engineAccel: 6,
+      enginePower: 69, // 0-100km/h 6.8秒
       brakeDecel: 21,
       wheelBase: 2.475,
       steerRate: 2.7,
@@ -205,7 +243,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'シルビア (S14)',
     description: 'FR・ターボ。S13よりパワーがあり、少し大きく安定',
     params: car(235, {
-      engineAccel: 16.5,
+      engineAccel: 6.5,
+      enginePower: 73, // 0-100km/h 6.3秒
       brakeDecel: 21.5,
       wheelBase: 2.525,
       steerRate: 2.6,
@@ -218,7 +257,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'RX-7 (FD3S)',
     description: 'FR・ロータリーターボ。軽くて前後のバランスがよく、速くてよく曲がる',
     params: car(260, {
-      engineAccel: 17.5,
+      engineAccel: 7.5,
+      enginePower: 90, // 0-100km/h 5.2秒
       brakeDecel: 22,
       wheelBase: 2.43,
       steerRate: 2.8,
@@ -231,7 +271,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'ランエボIII',
     description: '4WD・ターボ。大きなウイング。IVより少し非力',
     params: car(240, {
-      engineAccel: 18.5,
+      engineAccel: 8.5,
+      enginePower: 80, // 0-100km/h 5.5秒
       brakeDecel: 22,
       wheelBase: 2.51,
       steerRate: 2.5,
@@ -244,7 +285,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'ランエボIV',
     description: '4WD・ターボ。立ち上がりの加速とグリップが強い',
     params: car(245, {
-      engineAccel: 19.5,
+      engineAccel: 9,
+      enginePower: 89, // 0-100km/h 5秒
       brakeDecel: 22,
       wheelBase: 2.5,
       steerRate: 2.5,
@@ -257,7 +299,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'GT-R (R32)',
     description: '4WD・ツインターボ。最高速がいちばん高いが重い',
     params: car(265, {
-      engineAccel: 19,
+      engineAccel: 9,
+      enginePower: 89, // 0-100km/h 5秒
       brakeDecel: 20,
       wheelBase: 2.62,
       steerRate: 2.3,
@@ -270,7 +313,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: 'GT-R (R34)',
     description: '4WD・ツインターボ。R32より速く、高速コーナーも安定',
     params: car(285, {
-      engineAccel: 19.5,
+      engineAccel: 9,
+      enginePower: 93, // 0-100km/h 4.8秒
       brakeDecel: 21,
       wheelBase: 2.66,
       steerRate: 2.3,
@@ -347,9 +391,8 @@ export function stepVehicle(
   const movingBackward = v < -STOP_THRESHOLD;
 
   if (throttle > 0 && !movingBackward) {
-    // 前進加速（最高速に近いほど弱まる）
-    const headroom = Math.max(0, 1 - v / p.maxForwardSpeed);
-    v += throttle * p.engineAccel * headroom * dt;
+    // 前進加速（速いほど弱まる）
+    v += throttle * driveAccelAt(v, p) * dt;
   } else if (throttle > 0 && movingBackward) {
     // 後退中のアクセルはブレーキとして働く
     v = decelerate(v, throttle * p.brakeDecel * dt);

@@ -1,4 +1,4 @@
-import { type VehicleParams, lateralAccelAt } from '../sim/vehicle';
+import { type VehicleParams, driveAccelAt, lateralAccelAt } from '../sim/vehicle';
 import type { Course } from './course';
 
 /** レーシングラインの点の間隔 [m] */
@@ -149,7 +149,7 @@ export function buildSpeedProfile(line: RacingLine, p: VehicleParams, opts: Spee
     }
   }
   const accelAt = (speed: number, i: number) =>
-    Math.max(0.3, p.engineAccel * Math.max(0, 1 - speed / p.maxForwardSpeed) - p.dragCoef * speed * speed - GRAVITY * grade[i]);
+    Math.max(0.3, driveAccelAt(speed, p) - p.dragCoef * speed * speed - GRAVITY * grade[i]);
   const brakeAt = (speed: number, i: number) => Math.max(1, p.brakeDecel * opts.brake + p.dragCoef * speed * speed + GRAVITY * grade[i]);
 
   // 周回コースは継ぎ目をまたぐので2周分まわす

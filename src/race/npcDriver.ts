@@ -1,5 +1,5 @@
 import type { CarSnapshot } from '../sim/car';
-import { type DriverInput, NEUTRAL_INPUT, type VehicleParams, steerLimitAt } from '../sim/vehicle';
+import { type DriverInput, NEUTRAL_INPUT, type VehicleParams, driveAccelAt, steerLimitAt } from '../sim/vehicle';
 import { type RacingLine, buildSpeedProfile } from './racingLine';
 
 /** NPC の強さ */
@@ -314,7 +314,7 @@ export class NpcDriver {
     let brake = 0;
     if (err > 0) {
       // 速度を保つのに必要な分（空気抵抗に見合うアクセル）に、足りない分を上乗せする
-      const hold = (p.dragCoef * v * v) / Math.max(0.5, p.engineAccel * Math.max(0.05, 1 - v / p.maxForwardSpeed));
+      const hold = (p.dragCoef * v * v) / Math.max(0.5, driveAccelAt(v, p));
       throttle = Math.min(1, hold + err * 0.6);
     } else if (err < -0.4) {
       brake = Math.min(1, -err * 0.35);
