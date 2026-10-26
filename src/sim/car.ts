@@ -60,8 +60,8 @@ const UPSET_GRIP_LOSS = 0.7;
 /** 草地では、グリップがこの割合まで落ちる */
 const GRASS_GRIP = 0.55;
 /** 草地の転がり抵抗: 減速度 = GRASS_DRAG_BASE + GRASS_DRAG_PER_SPEED * v [m/s^2]（普通車は 40km/h くらいまでしか出ない） */
-const GRASS_DRAG_BASE = 1.5;
-const GRASS_DRAG_PER_SPEED = 0.45;
+const GRASS_DRAG_BASE = 1.0;
+const GRASS_DRAG_PER_SPEED = 0.33;
 /** 内側のタイヤを側溝に落としている間（溝落とし）、横に滑らずに曲がれる力がこの割合だけ増える */
 const GUTTER_GRIP = 0.4;
 

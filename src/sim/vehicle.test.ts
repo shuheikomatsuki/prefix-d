@@ -5,6 +5,8 @@ import {
   DEFAULT_VEHICLE_PARAMS as P,
   NEUTRAL_INPUT,
   VEHICLE_PRESETS,
+  accelTimeOf,
+  driveAccelAt,
   lateralAccelAt,
   steerLimitAt,
   stepVehicle,
@@ -133,5 +135,31 @@ describe('top speeds of the cars', () => {
     expect(top('ae86')).toBeLessThan(top('eg6'));
     expect(top('gtr')).toBeLessThan(top('r34'));
     expect(Math.max(...VEHICLE_PRESETS.map((v) => top(v.id)))).toBeCloseTo(top('r34'), 5);
+  });
+});
+
+describe('acceleration of the cars', () => {
+  const preset = (id: string) => VEHICLE_PRESETS.find((v) => v.id === id)!.params;
+
+  it('takes about as long from 0 to 100 km/h as the real cars', () => {
+    // 実車の計測（AE86 約8.5秒、FD3S 約5.2秒、R34 約4.9秒、軽自動車 約14秒）に近い
+    expect(accelTimeOf(preset('ae86'))).toBeGreaterThan(7);
+    expect(accelTimeOf(preset('ae86'))).toBeLessThan(9);
+    expect(accelTimeOf(preset('fd3s'))).toBeGreaterThan(4.5);
+    expect(accelTimeOf(preset('fd3s'))).toBeLessThan(6);
+    for (const v of VEHICLE_PRESETS) {
+      expect(accelTimeOf(v.params)).toBeGreaterThan(4.5);
+      expect(accelTimeOf(v.params)).toBeLessThan(15);
+    }
+    expect(accelTimeOf(preset('r34'))).toBeLessThan(accelTimeOf(preset('ae86')));
+    expect(accelTimeOf(preset('kei'))).toBeGreaterThan(accelTimeOf(preset('ae85')));
+  });
+
+  it('pulls weaker at high speed than at low speed', () => {
+    const fd = preset('fd3s');
+    expect(driveAccelAt(5, fd)).toBe(fd.engineAccel);
+    expect(driveAccelAt(40, fd)).toBeLessThan(driveAccelAt(20, fd) * 0.6);
+    // 低速でもタイヤのグリップを超える加速（1G 近く）はしない
+    for (const v of VEHICLE_PRESETS) expect(driveAccelAt(0, v.params)).toBeLessThanOrEqual(9.81);
   });
 });

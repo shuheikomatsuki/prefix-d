@@ -1,4 +1,4 @@
-import { VEHICLE_PRESETS, type VehiclePreset, topSpeedOf } from '../sim/vehicle';
+import { VEHICLE_PRESETS, type VehiclePreset, accelTimeOf, topSpeedOf } from '../sim/vehicle';
 
 /** メニューに出す車の性能の 1 項目（value は選べる車の中での 0..1） */
 export interface CarStat {
@@ -10,7 +10,8 @@ export interface CarStat {
 
 const METRICS: readonly { label: string; of: (v: VehiclePreset) => number; text?: (v: VehiclePreset) => string }[] = [
   { label: '最高速', of: (v) => topSpeedOf(v.params), text: (v) => `${Math.round(topSpeedOf(v.params) * 3.6)} km/h` },
-  { label: '加速', of: (v) => v.params.engineAccel },
+  // 0-100km/h の秒数。短いほど棒が長い
+  { label: '加速', of: (v) => 1 / accelTimeOf(v.params), text: (v) => `${accelTimeOf(v.params).toFixed(1)} 秒` },
   { label: 'コーナー', of: (v) => v.params.maxLateralAccel },
   { label: 'グリップ', of: (v) => v.params.lateralGrip },
   { label: 'ブレーキ', of: (v) => v.params.brakeDecel },
