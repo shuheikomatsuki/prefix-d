@@ -31,7 +31,7 @@ export interface VehicleParams {
   enginePower: number;
   /** 後退時の加速度 [m/s^2] */
   reverseAccel: number;
-  /** ブレーキの減速度 [m/s^2] */
+  /** ブレーキの減速度 [m/s^2]（実車でおよそ 0.75〜1.15G） */
   brakeDecel: number;
   /** アクセルを離したときの減速度 [m/s^2] */
   coastDecel: number;
@@ -45,7 +45,7 @@ export interface VehicleParams {
   steerRate: number;
   /** ハンドルが中央に戻る速さ [rad/s] */
   steerReturnRate: number;
-  /** 旋回時の横加速度の上限 [m/s^2]（高速ほど舵角が自動で絞られる） */
+  /** 旋回時の横加速度の上限 [m/s^2]（高速ほど舵角が自動で絞られる。実車でおよそ 0.7〜1.05G） */
   maxLateralAccel: number;
   /** 横滑りの減衰率 [1/s]（大きいほどグリップが強い） */
   lateralGrip: number;
@@ -57,14 +57,14 @@ export const DEFAULT_VEHICLE_PARAMS: Readonly<VehicleParams> = {
   engineAccel: 5,
   enginePower: 55,
   reverseAccel: 4,
-  brakeDecel: 16,
+  brakeDecel: 8.2,
   coastDecel: 0.8,
   dragCoef: 0.0015,
   wheelBase: 2.6,
   maxSteerAngle: 0.6,
   steerRate: 2.2,
   steerReturnRate: 3.5,
-  maxLateralAccel: 14,
+  maxLateralAccel: 7.8,
   lateralGrip: 8,
 };
 
@@ -127,7 +127,8 @@ function car(topKmh: number, p: Partial<VehicleParams>): VehicleParams {
  * 選べる車（P キーで切り替え）。最高速度 [km/h] は、イニシャルDのアニメの場面（メーターの読み・直線での伸び・
  * 車どうしの差）と、それぞれの車のチューニングから見積もった値。
  * 加速（engineAccel・enginePower）は、実車の 0-100km/h の加速タイム（雑誌の計測やカタログの出力・車重）に、
- * 作中のチューニングを少し足した値に合わせた（コメントの秒数）
+ * 作中のチューニングを少し足した値に合わせた（コメントの秒数）。
+ * ブレーキ・横G は、スポーツタイヤの実車の 1G 前後（100km/h から 40m 前後で止まる）を上限に、車ごとの差をつけた
  */
 export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
   {
@@ -142,7 +143,7 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     label: '軽自動車',
     description: '遅いけれど小回りがきく',
     // 0-100km/h 14秒
-    params: car(140, { engineAccel: 3.5, enginePower: 37, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 }),
+    params: car(140, { engineAccel: 3.5, enginePower: 37, brakeDecel: 7.3, wheelBase: 2.4, maxLateralAccel: 6.9 }),
   },
   {
     id: 'cappuccino',
@@ -151,12 +152,12 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(170, {
       engineAccel: 4.5,
       enginePower: 48, // 0-100km/h 10秒
-      brakeDecel: 23,
+      brakeDecel: 11.3,
       wheelBase: 2.06,
       maxSteerAngle: 0.64,
       steerRate: 3.1,
       steerReturnRate: 4,
-      maxLateralAccel: 19.5,
+      maxLateralAccel: 10.3,
       lateralGrip: 10,
     }),
   },
@@ -167,12 +168,12 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(160, {
       engineAccel: 4,
       enginePower: 42, // 0-100km/h 11.5秒
-      brakeDecel: 21,
+      brakeDecel: 10.5,
       wheelBase: 2.4,
       maxSteerAngle: 0.62,
       steerRate: 2.8,
       steerReturnRate: 3.8,
-      maxLateralAccel: 18,
+      maxLateralAccel: 9.6,
       lateralGrip: 9,
     }),
   },
@@ -183,12 +184,12 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(210, {
       engineAccel: 5,
       enginePower: 59, // 0-100km/h 8秒
-      brakeDecel: 23,
+      brakeDecel: 11.3,
       wheelBase: 2.4,
       maxSteerAngle: 0.62,
       steerRate: 2.9,
       steerReturnRate: 3.8,
-      maxLateralAccel: 20,
+      maxLateralAccel: 10.5,
       lateralGrip: 9.5,
     }),
   },
@@ -199,12 +200,12 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(215, {
       engineAccel: 5.5,
       enginePower: 69, // 0-100km/h 7秒
-      brakeDecel: 22,
+      brakeDecel: 10.9,
       wheelBase: 2.45,
       maxSteerAngle: 0.62,
       steerRate: 2.9,
       steerReturnRate: 3.8,
-      maxLateralAccel: 19,
+      maxLateralAccel: 10.1,
       lateralGrip: 10.5,
     }),
   },
@@ -215,12 +216,12 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(225, {
       engineAccel: 6,
       enginePower: 73, // 0-100km/h 6.5秒
-      brakeDecel: 23,
+      brakeDecel: 11.3,
       wheelBase: 2.5,
       maxSteerAngle: 0.62,
       steerRate: 2.9,
       steerReturnRate: 3.8,
-      maxLateralAccel: 19,
+      maxLateralAccel: 10.1,
       lateralGrip: 11,
     }),
   },
@@ -231,10 +232,10 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(220, {
       engineAccel: 6,
       enginePower: 69, // 0-100km/h 6.8秒
-      brakeDecel: 21,
+      brakeDecel: 10.5,
       wheelBase: 2.475,
       steerRate: 2.7,
-      maxLateralAccel: 17,
+      maxLateralAccel: 9.2,
       lateralGrip: 8.5,
     }),
   },
@@ -245,10 +246,10 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(235, {
       engineAccel: 6.5,
       enginePower: 73, // 0-100km/h 6.3秒
-      brakeDecel: 21.5,
+      brakeDecel: 10.7,
       wheelBase: 2.525,
       steerRate: 2.6,
-      maxLateralAccel: 17.5,
+      maxLateralAccel: 9.4,
       lateralGrip: 9,
     }),
   },
@@ -259,10 +260,10 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(260, {
       engineAccel: 7.5,
       enginePower: 90, // 0-100km/h 5.2秒
-      brakeDecel: 22,
+      brakeDecel: 10.9,
       wheelBase: 2.43,
       steerRate: 2.8,
-      maxLateralAccel: 18.5,
+      maxLateralAccel: 9.8,
       lateralGrip: 10,
     }),
   },
@@ -273,10 +274,10 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(240, {
       engineAccel: 8.5,
       enginePower: 80, // 0-100km/h 5.5秒
-      brakeDecel: 22,
+      brakeDecel: 10.9,
       wheelBase: 2.51,
       steerRate: 2.5,
-      maxLateralAccel: 17,
+      maxLateralAccel: 9.2,
       lateralGrip: 11,
     }),
   },
@@ -287,10 +288,10 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(245, {
       engineAccel: 9,
       enginePower: 89, // 0-100km/h 5秒
-      brakeDecel: 22,
+      brakeDecel: 10.9,
       wheelBase: 2.5,
       steerRate: 2.5,
-      maxLateralAccel: 17.5,
+      maxLateralAccel: 9.4,
       lateralGrip: 11.5,
     }),
   },
@@ -301,10 +302,10 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(265, {
       engineAccel: 9,
       enginePower: 89, // 0-100km/h 5秒
-      brakeDecel: 20,
+      brakeDecel: 10,
       wheelBase: 2.62,
       steerRate: 2.3,
-      maxLateralAccel: 17,
+      maxLateralAccel: 9.2,
       lateralGrip: 11,
     }),
   },
@@ -315,10 +316,10 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(285, {
       engineAccel: 9,
       enginePower: 93, // 0-100km/h 4.8秒
-      brakeDecel: 21,
+      brakeDecel: 10.5,
       wheelBase: 2.66,
       steerRate: 2.3,
-      maxLateralAccel: 17.5,
+      maxLateralAccel: 9.4,
       lateralGrip: 11.5,
     }),
   },
@@ -344,8 +345,8 @@ const STOP_THRESHOLD = 0.5;
 /** ダウンフォース: この速さ [m/s] から横加速度の上限が増え始め、DOWNFORCE_FULL で最大になる */
 const DOWNFORCE_FROM = 15;
 const DOWNFORCE_FULL = 40;
-/** 高速で増える横加速度の上限の割合（百数十キロでも高速コーナーを曲がれるように） */
-const DOWNFORCE_GAIN = 0.35;
+/** 高速で増える横加速度の上限の割合（市販車の空力はわずかなので小さく） */
+const DOWNFORCE_GAIN = 0.08;
 
 /** 速さ speed [m/s] での横加速度の上限。速いほど車が路面に押し付けられ、少し大きくなる */
 export function lateralAccelAt(speed: number, p: VehicleParams): number {

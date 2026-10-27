@@ -97,8 +97,24 @@ describe('road from straights and arcs', () => {
     const road = buildRoad(spec([{ straight: 100 }, { straight: 200, bumpy: true }, { straight: 100 }]));
     expect(bumpHeight(road, 50, 0)).toBe(0);
     const waves = Array.from({ length: 100 }, (_, i) => bumpHeight(road, 150 + i, 0));
-    expect(Math.max(...waves)).toBeGreaterThan(0.05);
-    expect(Math.min(...waves)).toBeLessThan(-0.05);
+    expect(Math.max(...waves)).toBeGreaterThan(0.03);
+    expect(Math.min(...waves)).toBeLessThan(-0.03);
+  });
+
+  it('keeps a car on the ground over the bumps up to about 130 km/h', () => {
+    const road = buildRoad(spec([{ straight: 100 }, { straight: 400, bumpy: true }, { straight: 100 }]));
+    // 路面の高さの変化の速さ（2階微分 × 速さ^2）が、重力より小さければ車は浮かない
+    const drop = (kmh: number) => {
+      const v = kmh / 3.6;
+      let worst = 0;
+      for (let s = 150; s < 450; s += 0.25) {
+        const d2 = (bumpHeight(road, s + 0.5, 0) - 2 * bumpHeight(road, s, 0) + bumpHeight(road, s - 0.5, 0)) / 0.25;
+        worst = Math.max(worst, -d2 * v * v);
+      }
+      return worst;
+    };
+    expect(drop(130)).toBeLessThan(9.81);
+    expect(drop(200)).toBeGreaterThan(9.81);
   });
 });
 

@@ -34,8 +34,8 @@ describe('stepVehicle', () => {
 
   it('brakes to a stop from cruising speed within a few seconds', () => {
     const cruising = { ...REST, forwardSpeed: 20 };
-    // 16 m/s^2 なら 1 秒で 20 → 4 m/s 程度まで落ちる
-    const s = run(cruising, { brake: 1 }, 1.0);
+    // 8.2 m/s^2（約 0.85G）なら 2 秒で 20 → 4 m/s 程度まで落ちる
+    const s = run(cruising, { brake: 1 }, 2.0);
     expect(s.forwardSpeed).toBeLessThan(5);
     expect(s.forwardSpeed).toBeGreaterThanOrEqual(0);
   });
@@ -89,13 +89,14 @@ describe('stepVehicle', () => {
     expect(lateral).toBeLessThanOrEqual(lateralAccelAt(v, P) + 1e-9);
   });
 
-  it('grips harder at high speed (downforce) so that fast corners can be taken', () => {
+  it('grips a little harder at high speed (downforce)', () => {
     expect(lateralAccelAt(10, P)).toBe(P.maxLateralAccel);
-    expect(lateralAccelAt(40, P)).toBeGreaterThan(P.maxLateralAccel * 1.3);
+    expect(lateralAccelAt(40, P)).toBeGreaterThan(P.maxLateralAccel * 1.05);
+    expect(lateralAccelAt(40, P)).toBeLessThan(P.maxLateralAccel * 1.15);
     expect(lateralAccelAt(60, P)).toBe(lateralAccelAt(40, P));
-    // FD なら 130km/h で半径 80m のカーブを曲がれる
+    // FD なら 100km/h で半径 80m のカーブを曲がれる（約 1G）
     const fd = VEHICLE_PRESETS.find((c) => c.id === 'fd3s')!.params;
-    const v = 130 / 3.6;
+    const v = 100 / 3.6;
     expect((v * v * Math.tan(steerLimitAt(v, fd))) / fd.wheelBase).toBeGreaterThanOrEqual((v * v) / 80);
   });
 
@@ -161,5 +162,26 @@ describe('acceleration of the cars', () => {
     expect(driveAccelAt(40, fd)).toBeLessThan(driveAccelAt(20, fd) * 0.6);
     // 低速でもタイヤのグリップを超える加速（1G 近く）はしない
     for (const v of VEHICLE_PRESETS) expect(driveAccelAt(0, v.params)).toBeLessThanOrEqual(9.81);
+  });
+});
+
+describe('braking and cornering of the cars', () => {
+  it('stops and corners at about 1 G like real cars on sports tyres', () => {
+    for (const v of VEHICLE_PRESETS) {
+      expect(v.params.brakeDecel).toBeGreaterThan(0.7 * 9.81);
+      expect(v.params.brakeDecel).toBeLessThan(1.2 * 9.81);
+      expect(lateralAccelAt(30, v.params)).toBeGreaterThan(0.65 * 9.81);
+      expect(lateralAccelAt(30, v.params)).toBeLessThan(1.15 * 9.81);
+    }
+    // AE86 は 100km/h から 40m 前後で止まる
+    const ae86 = VEHICLE_PRESETS.find((c) => c.id === 'ae86')!.params;
+    let s = { ...REST, forwardSpeed: 100 / 3.6, yawRate: 0 };
+    let d = 0;
+    while (s.forwardSpeed > 0) {
+      s = stepVehicle(s, { ...NEUTRAL_INPUT, brake: 1 }, ae86, DT);
+      d += s.forwardSpeed * DT;
+    }
+    expect(d).toBeGreaterThan(30);
+    expect(d).toBeLessThan(45);
   });
 });
