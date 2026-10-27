@@ -48,7 +48,7 @@ describe('rough play', () => {
     expect(style.spin).toBeLessThan(shingo.rough!.spin / 2);
     const tmap = MAPS.find((m) => m.id === tachi.course)!;
     const tparams = VEHICLE_PRESETS.find((v) => v.id === tachi.car)!.params;
-    const { hits, racers } = simulateBattle(tmap, { level: rivalLevel(tachi), params: tparams, rough: style }, { level: NPC_LEVELS[0], params: tparams }, 300, 10);
+    const { hits, racers } = simulateBattle(tmap, { level: rivalLevel(tachi), params: tparams, rough: style }, { level: NPC_LEVELS[0], params: tparams }, 420, 10);
     console.log('tachi hits', hits, racers.map((r) => `${r.timer.phase} ${r.timer.time.toFixed(1)} off ${r.maxOffset.toFixed(1)} fell ${r.fell}`).join(' | '));
     expect(hits).toBeGreaterThan(0);
     expect(racers[0].timer.phase).toBe('finished');

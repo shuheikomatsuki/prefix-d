@@ -1,5 +1,5 @@
 import type { CarSnapshot } from '../sim/car';
-import { type DriverInput, NEUTRAL_INPUT, type VehicleParams, driveAccelAt, steerLimitAt } from '../sim/vehicle';
+import { type DriverInput, NEUTRAL_INPUT, type VehicleParams, driveAccelAt, lateralAccelAt, steerLimitAt } from '../sim/vehicle';
 import { type RacingLine, buildSpeedProfile } from './racingLine';
 
 /** NPC の強さ */
@@ -273,7 +273,8 @@ export class NpcDriver {
       wantShift = Math.abs(target) > Math.abs(wantShift) ? target : wantShift;
       // 横に並ぶ余裕がなければ、ぶつからないよう速度を合わせる
       const room = side > 0 ? roomLeft : roomRight;
-      if (room < 3 || gap < 6) follow = Math.min(follow, ov + Math.max(0, gap - 5) * 0.6);
+      // 詰まる速さが大きいほど、ブレーキが間に合うよう早めに合わせる
+      if (room < 3 || gap < 6 + (Math.max(0, closing) ** 2) / p.brakeDecel) follow = Math.min(follow, ov + Math.max(0, gap - 5) * 0.6);
     }
     this.sideShift += (wantShift - this.sideShift) * Math.min(1, dt * 1.5);
 
@@ -306,7 +307,16 @@ export class NpcDriver {
 
     // --- アクセル・ブレーキ ---
     let target = this.targetSpeed(here.s, Math.max(4, v * 0.25)) * this.pace;
+    // 抜くためにラインから横へずれているときは、コーナーが内側ほどきつくなる分だけ速さを抑える
+    if (Math.abs(this.sideShift) > 0.3) {
+      let k = 0;
+      for (let d = 0; d <= Math.max(10, v * 1.5); d += this.line.step) k = Math.max(k, Math.abs(this.line.curvature[this.indexAt(here.s + d)]));
+      target *= Math.sqrt(Math.max(0.5, 1 - k * Math.abs(this.sideShift)));
+    }
     target = aim ? aim.speed : Math.min(target, follow);
+    // 向かう点へ曲がりきれない速さなら落とす（ラインから外れて膨らみ始めたとき）
+    const bend = Math.abs(2 * Math.sin(alpha)) / Math.max(1, dist);
+    if (!aim && bend > 1e-3) target = Math.min(target, Math.sqrt(lateralAccelAt(v, p) / bend));
     // 大きく向きがずれているとき（スピン後など）はゆっくり戻る
     if (Math.abs(alpha) > 1.2) target = Math.min(target, 8);
     const err = target - v;
