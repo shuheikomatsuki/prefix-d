@@ -74,7 +74,7 @@ const HEIGHT_SMOOTH = 60;
 /** 道幅の変化をなめらかにする幅 [m] */
 const WIDTH_SMOOTH = 30;
 /** 荒れた路面の波の高さ [m] */
-export const BUMP_AMPLITUDE = 0.045;
+export const BUMP_AMPLITUDE = 0.035;
 /**
  * 立体交差を見つける: 道路に沿って CROSS_APART [m] 以上離れた2点が、平面で道幅の半分ずつ＋ CROSS_MARGIN [m]
  * より近く、高さが CROSS_CLEARANCE [m] 以上違えば交差。交差の前後 LAYER_EXTEND [m] を上・下の層にする
@@ -492,14 +492,14 @@ export function buildRoad(spec: RoadSpec): RoadModel {
 /**
  * 荒れた路面の波の高さ [m]。s は道路に沿った距離、offset は中心から左へのずれ。
  * 舗装全体がゆるくうねっている（継ぎ目だけの段差ではない）。長さの違う波を重ね、左右でも少しずらして、
- * 車が前後・左右に揺すられるようにする。130km/h くらいまでは路面に張り付いたまま揺すられ、
+ * 車が前後・左右に揺すられるようにする。180km/h くらいまでは路面に張り付いたまま揺すられ、
  * それより速いと波の頂上で少し浮く（src/game/airborne.ts）
  */
 export function bumpHeight(road: RoadModel, s: number, offset: number): number {
   const e = road.bump[road.indexAt(s)];
   if (e <= 0) return 0;
   const w = 2 * Math.PI;
-  const wave = 0.65 * Math.sin((w * s) / 24 + 0.4) + 0.35 * Math.sin((w * s) / 11 + 1.7 + offset * 0.5);
+  const wave = 0.7 * Math.sin((w * s) / 30 + 0.4) + 0.3 * Math.sin((w * s) / 14 + 1.7 + offset * 0.5);
   return BUMP_AMPLITUDE * e * wave;
 }
 
