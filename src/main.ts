@@ -11,15 +11,15 @@ import { NpcField, npcEntries, rankEntrants, velocityOf } from './game/npcRace';
 import { migrateSaveData } from './game/saveVersion';
 import { PLAYER_COLORS, RemoteCars, carStateOf, createLabel } from './game/remoteCars';
 import { MAPS, TITLE_MAPS } from './map/maps';
-import type { MapDefinition } from './map/tilemap';
 import { NetClient } from './net/client';
-import { type SubmitResult, mergeBoards } from './net/leaderboard';
-import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/leaderboardClient';
-import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
+import { LeaderboardClient } from './net/leaderboardClient';
+import { type RankedGhost, Ranking } from './game/ranking';
+import { type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
-import { RIVALS, type Rival, loadBeatenRivals, markRivalBeaten, rivalLevel } from './race/rivals';
-import { type BattleContext, BattleDialogue, type BattleEvent, EdgeWatcher, OvertakeWatcher, type RivalDialogue, dialogueApplies, insideOf, sceneLines, turnAround, wentWide } from './race/dialogue';
-import { CHARACTERS, RIVAL_DIALOGUES } from './race/dialogueScript';
+import { RIVALS, markRivalBeaten, rivalLevel } from './race/rivals';
+import type { BattleContext } from './race/dialogue';
+import { BattleTalk } from './race/battleTalk';
+import { CHARACTERS } from './race/dialogueScript';
 import { CHASE_START_GAP, type Runner, SAFE_SECONDS, SuddenDeath } from './race/suddenDeath';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { courseKey } from './map/courseRevision';
@@ -34,68 +34,37 @@ import { CarMesh, carStyle, driverEyeFor } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
 import { nearestLit } from './game/headlights';
-import { MIRROR_MODES, Mirrors, centeredRegion, loadMirrorMode, saveMirrorMode } from './render/mirrors';
+import { Mirrors, loadMirrorMode } from './render/mirrors';
 import type { CarSnapshot, Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
 import { NEUTRAL_INPUT, VEHICLE_PRESETS, topSpeedOf } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
-import { ALL_CARS, RankingPanel } from './ui/rankingPanel';
 import { ConfirmDialog } from './ui/confirmDialog';
 import { Minimap, type MinimapMarker } from './ui/minimap';
-import { GameMenu, type MenuGroup, type MenuItem, type MenuMode, type MenuScreen } from './ui/menu';
-import { carDetail, conditionsDetail, courseDetail, npcDetail, rivalDetail, textDetail } from './ui/menuDetails';
-import { courseProfile } from './ui/courseInfo';
+import { createGameMenu } from './ui/menuFlows';
+import { settingItems } from './ui/settingsItems';
 import { driveOf } from './ui/carStats';
-import { CarPreview } from './render/carPreview';
 import { RaceHud } from './ui/raceHud';
-import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
+import { EmoteFeed } from './ui/emoteFeed';
+import { hex } from './ui/html';
+import { measureMirrorRegion } from './ui/mirrorLayout';
+import { netStatusHtml } from './ui/netStatus';
+import { Horns } from './game/horn';
+import { NPC_COUNT, type RaceMode, type BattleRule } from './game/modes';
+import { lerpSnapshot } from './sim/interpolate';
 import { TouchControls, prefersTouch } from './ui/touchControls';
 import { type Speaker, Subtitles } from './ui/subtitles';
 
 /** この強さ [m/s] 以上の速度変化を「衝突」として音・揺れを出す */
 const IMPACT_THRESHOLD = 2.5;
-/** セリフの 'crash'（壁に強くぶつかった）とみなす衝突の強さ [m/s] */
-const CRASH_THRESHOLD = 7;
 /** 段差から着地したときに、この下向きの速さ [m/s] 以上なら音・揺れを出す */
 const LANDING_THRESHOLD = 3;
 /** 自分の車の状態を送る間隔（物理ステップ数。60Hz / 3 = 20Hz） */
 const SEND_EVERY_STEPS = 3;
 
-/** 2つのスナップショットの間を補間する（描画を物理ステップより滑らかにするため） */
-function lerpSnapshot(a: CarSnapshot, b: CarSnapshot, t: number): CarSnapshot {
-  const lerp = (x: number, y: number) => x + (y - x) * t;
-  let dyaw = b.yaw - a.yaw;
-  dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
-  return {
-    ...b,
-    x: lerp(a.x, b.x),
-    y: lerp(a.y, b.y),
-    z: lerp(a.z, b.z),
-    yaw: a.yaw + dyaw * t,
-    wheelSpin: lerp(a.wheelSpin, b.wheelSpin),
-  };
-}
-
-/** レースの種類（タイムアタック・NPC 対戦・ライバルとのバトル・部屋のみんなとのオンライン対戦） */
-type RaceMode = 'timeAttack' | 'npc' | 'battle' | 'online';
-/** ライバルとのバトルのルール: 横に並んでスタート・先行後追い（自分が先行から／後追いから） */
-type BattleRule = 'side' | 'leadFirst' | 'chaseFirst';
-
-const BATTLE_RULES: readonly { id: BattleRule; label: string; note: string }[] = [
-  { id: 'side', label: '横に並んでスタート', note: '先にゴールしたほうの勝ち' },
-  { id: 'leadFirst', label: '先行後追い（自分が先行）', note: 'サドンデス方式' },
-  { id: 'chaseFirst', label: '先行後追い（自分が後追い）', note: 'サドンデス方式' },
-];
-
 /** 引き分けのあと、次の1本を始めるまでの時間 [ms] */
 const NEXT_ROUND_DELAY = 3500;
-/** クラクションの音が届く距離 [m]（遠い車ほど小さく聞こえる） */
-const HORN_RANGE = 160;
-
-const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
-/** 他の人のクラクションの「止める」が届かなかったときに止めるまでの時間 [ms] */
-const HORN_MAX_MS = 4000;
 /** 近道をしてから、コースを外れた所へ戻すまでの時間 [s] */
 const REJOIN_DELAY = 1.2;
 /** エモートを続けて送れる間隔 [ms] */
@@ -120,21 +89,6 @@ async function main() {
   /** ミラーを置ける範囲（画面のいちばん上の真ん中。毎フレーム測ると重いので時々） */
   let mirrorRegion = { left: 0, right: window.innerWidth, top: 8 };
   let mirrorRegionAge = 0;
-  const measureMirrorRegion = () => {
-    const w = window.innerWidth;
-    // 縦向き: 横いっぱいに。上のボタン・周回・地図などはミラーの下へずらす（--top-shift）
-    if (window.innerHeight > w) return { left: 8, right: w - 8, top: 8 };
-    // 横向き: 左上のボタンと右上の地図を避けて、真ん中に左右対称に（操作説明・周回・速度はミラーの下や別の場所へずらす）
-    let left = 8;
-    let right = w - 8;
-    for (const id of ['touch-top', 'minimap']) {
-      const r = document.getElementById(id)?.getBoundingClientRect();
-      if (!r || r.width === 0 || r.height === 0 || r.top > 80) continue;
-      if ((r.left + r.right) / 2 < w / 2) left = Math.max(left, r.right + 10);
-      else right = Math.min(right, r.left - 10);
-    }
-    return centeredRegion(w, left, right, 8);
-  };
   // ?map=1 のように開始マップを指定できる
   const requested = Number(params.get('map'));
   // 指定がなければ、タイトル画面の後ろに映す峠・首都高のどれかから始める（毎回変わる）
@@ -209,8 +163,7 @@ async function main() {
     return CHARACTERS[who] ?? { name: who };
   };
   const subtitles = new Subtitles(speakerOf, (name) => sound.effect(name));
-  /** いまのバトルのセリフ（セリフの無いライバルや、得意なコース以外では null） */
-  let talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher; wide: EdgeWatcher; inside: boolean; bumped: boolean } | null = null;
+  const talk = new BattleTalk(subtitles);
   let lastImpact = 0;
   const debugWhere = params.has('debug') ? document.body.appendChild(Object.assign(document.createElement('div'), { id: 'debug-where' })) : null;
   /** バトルのルール */
@@ -225,8 +178,6 @@ async function main() {
   let npcField: NpcField | null = null;
   /** NPC の強さ（?npc=pro のように指定できる） */
   let npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === (params.get('npc') ?? 'hard')));
-  /** NPC 対戦の NPC の台数 */
-  const NPC_COUNT = 3;
   let ghostRecorder = new GhostRecorder();
   /** いまのコースと車での自己ベスト */
   let best: RaceRecord | null = null;
@@ -234,7 +185,7 @@ async function main() {
   ghostMesh.root.visible = false;
   view.scene.add(ghostMesh.root);
   /** ランキングから選んだ人のゴースト（オレンジ色で一緒に走る） */
-  let rival: { name: string; total: number; ghost: GhostData } | null = null;
+  let rival: RankedGhost | null = null;
   const rivalMesh = createGhostMesh(0xffa040);
   rivalMesh.root.visible = false;
   view.scene.add(rivalMesh.root);
@@ -385,69 +336,21 @@ async function main() {
 
   /** バトルのセリフを用意し、スタート前の場面を出す（先行後追いの2本目からは、round を書いた場面だけ） */
   function startTalk(mode: RaceMode, nextRound: boolean) {
-    subtitles.clear();
-    talk = null;
-    if (mode !== 'battle') return;
     const r = battleRival();
-    const script = RIVAL_DIALOGUES[r.id];
-    const ctx: BattleContext = {
-      course: level.def.id,
-      homeCourse: r.course,
-      playerCar: vehicle().id,
-      rule: suddenDeath ? 'suddenDeath' : 'side',
-      playerLeads: suddenDeath?.playerLeads ?? false,
-      round: suddenDeath?.round ?? 1,
-      weather: env.weather,
-      time: env.time,
-    };
-    if (!dialogueApplies(script, ctx)) return;
-    talk = { script, ctx, lines: new BattleDialogue(script.race ?? [], ctx), overtakes: new OvertakeWatcher(), wide: new EdgeWatcher(), inside: false, bumped: false };
-    const intro = nextRound ? (script.intro ?? []).filter((sc) => sc.when?.round !== undefined) : script.intro;
-    subtitles.playScene(sceneLines(intro, ctx), () => {});
-  }
-
-  /** 勝負のあとの場面（セリフが無ければすぐ）を出してから then を呼ぶ */
-  function outcomeScene(kind: 'win' | 'lose' | 'draw', then: () => void) {
-    const t = talk;
-    if (!t) return then();
-    subtitles.playScene(sceneLines(t.script[kind], t.ctx), then);
-  }
-
-  /** 走っている間のセリフ（毎ステップ） */
-  function updateTalk() {
-    const t = talk;
-    const npc = npcField?.npcs[0];
-    if (!t || !race || !npc || race.phase !== 'racing') return;
-    const mine = race.distance(curr.x, curr.z);
-    const signedGap = mine - npc.timer.distance(npc.curr.x, npc.curr.z);
-    const events: BattleEvent[] = [];
-    const pass = t.overtakes.update(signedGap);
-    if (pass) events.push(pass);
-    if (lastImpact > CRASH_THRESHOLD) events.push('crash');
-    const course = race.course;
-    // コーナーでの位置: ライバルが外へはみ出したか・自分がインから抜いたか
-    const rp = course.project(npc.curr.x, npc.curr.z, { s: npc.curr.courseS ?? null });
-    const turn = turnAround(course, rp.s);
-    if (t.wide.update(wentWide(turn, rp.offset, level.offRoadDistance(npc.curr.x, npc.curr.z, npc.curr.courseS) ?? 0))) events.push('rivalWide');
-    // 抜いたと分かるのは少し前に出てからなので、横に並んでいた間にインにいたかを覚えておく
-    if (Math.abs(signedGap) < 4) t.inside = insideOf(turn, course.project(curr.x, curr.z, { s: curr.courseS ?? null }).offset, rp.offset);
-    if (pass === 'overtake' && t.inside) events.push('overtakeInside');
-    if (t.bumped) events.push('rivalBump');
-    t.bumped = false;
-    const lapDistance = course.closed ? mine - (race.lap - 1) * course.length : mine;
-    const progress = Math.min(1, Math.max(0, mine / (course.length * (course.closed ? race.totalLaps : 1))));
-    subtitles.say(
-      t.lines.update({
-        elapsed: race.time,
-        lap: race.lap,
-        lapDistance,
-        ahead: signedGap > 0,
-        gap: Math.abs(signedGap),
-        speedKmh: Math.abs(curr.forwardSpeed) * 3.6,
-        progress,
-        events,
-      }),
-    );
+    const ctx: BattleContext | null =
+      mode === 'battle'
+        ? {
+            course: level.def.id,
+            homeCourse: r.course,
+            playerCar: vehicle().id,
+            rule: suddenDeath ? 'suddenDeath' : 'side',
+            playerLeads: suddenDeath?.playerLeads ?? false,
+            round: suddenDeath?.round ?? 1,
+            weather: env.weather,
+            time: env.time,
+          }
+        : null;
+    talk.start(mode === 'battle' ? r.id : null, ctx, nextRound);
   }
 
   /** スタートの合図: カウントダウンを始める */
@@ -460,8 +363,7 @@ async function main() {
   /** レースの表示と NPC を片付ける（車の位置はそのまま） */
   function clearRace() {
     race = null;
-    subtitles.clear();
-    talk = null;
+    talk.clear();
     suddenDeath = null;
     window.clearTimeout(nextRoundTimer);
     npcField?.dispose();
@@ -563,7 +465,7 @@ async function main() {
               raceHud.showStandings(standings(), r.totalLaps, raceMode === 'battle');
               raceHud.showRankingButton(false);
             };
-            if (raceMode === 'battle') outcomeScene(won ? 'win' : 'lose', show);
+            if (raceMode === 'battle') talk.outcome(won ? 'win' : 'lose', show);
             else show();
             break;
           }
@@ -623,7 +525,7 @@ async function main() {
     raceHud.setWarning({ wrongWay: false, offCourse: false });
     raceHud.showRankingButton(false);
     if (outcome === 'draw') {
-      outcomeScene('draw', () => {
+      talk.outcome('draw', () => {
         if (suddenDeath !== sd) return;
         raceHud.showBattleResult(
           `${sd.round}本目は引き分け`,
@@ -640,7 +542,7 @@ async function main() {
     const why = outcome === 'leadWins' ? `${lead}（先行）が ${SAFE_SECONDS}秒より大きな差をつけてゴールした` : `${chase}（後追い）が抜いて先にゴールした`;
     const won = sd.winner === 'player';
     if (won) markRivalBeaten(battleRival().id);
-    outcomeScene(won ? 'win' : 'lose', () => {
+    talk.outcome(won ? 'win' : 'lose', () => {
       if (suddenDeath !== sd) return;
       raceHud.showBattleResult(won ? `勝利！ ${name} に勝った` : `敗北… ${name} の勝ち`, `${sd.round}本目で決着：${why}`);
     });
@@ -716,38 +618,17 @@ async function main() {
   const toggleLights = () => setLights(!lightsOn, true);
 
   // --- クラクション: 押している間だけ鳴らす（部屋の人にも聞こえる） ---
-  const hornInput = { key: false, touch: false };
-  let hornOn = false;
-  const remoteHornTimers = new Map<number, number>();
-  const updateHorn = () => {
-    const on = hornInput.key || hornInput.touch;
-    if (on === hornOn) return;
-    hornOn = on;
-    sound.horn('me', on);
-    net.send({ t: 'horn', on });
-  };
-  const remoteHorn = (id: number, on: boolean) => {
-    window.clearTimeout(remoteHornTimers.get(id));
-    if (!on) {
-      sound.horn(id, false);
-      return;
-    }
-    sound.horn(id, true, remoteHornVolume(id));
-    remoteHornTimers.set(id, window.setTimeout(() => sound.horn(id, false), HORN_MAX_MS));
-  };
-  /** 他の人のクラクションの大きさ: 遠いほど小さく、HORN_RANGE 以上離れると聞こえない */
-  const remoteHornVolume = (id: number) => {
-    const p = remoteCars.positionOf(id, performance.now());
-    const d = p ? Math.hypot(p.x - curr.x, p.z - curr.z) : HORN_RANGE;
-    return Math.max(0, 1 - d / HORN_RANGE);
-  };
-  /** 鳴らしている間に近づいたり離れたりしたら、大きさを変える */
-  const updateRemoteHornVolumes = () => {
-    for (const id of remoteHornTimers.keys()) sound.setHornVolume(id, remoteHornVolume(id));
-  };
+  const horns = new Horns(
+    sound,
+    (on) => net.send({ t: 'horn', on }),
+    (id) => {
+      const p = remoteCars.positionOf(id, performance.now());
+      return p ? Math.hypot(p.x - curr.x, p.z - curr.z) : null;
+    },
+  );
 
   // --- セリフ（エモート）: 設定で決めたセリフを、自分と部屋のみんなの車の上に吹き出しで出す ---
-  const emoteFeed = document.getElementById('emote-feed')!;
+  const emoteFeed = new EmoteFeed();
   let emote = loadEmote();
   let lastEmoteAt = -Infinity;
   const showEmote = (id: number | null, text: string) => {
@@ -757,12 +638,7 @@ async function main() {
     const info = self ? null : remoteCars.list.find((p) => p.id === id);
     const name = self ? loadPlayerName().trim() || 'あなた' : (info?.name ?? '誰か');
     const color = self ? carMesh.color : PLAYER_COLORS[(info?.color ?? 0) % PLAYER_COLORS.length];
-    const li = document.createElement('li');
-    li.innerHTML = `<span class="dot" style="background:#${color.toString(16).padStart(6, '0')}"></span><b>${escapeHtml(name)}</b>${escapeHtml(text)}`;
-    emoteFeed.appendChild(li);
-    while (emoteFeed.children.length > 4) emoteFeed.firstElementChild?.remove();
-    window.setTimeout(() => li.classList.add('fade'), 5000);
-    window.setTimeout(() => li.remove(), 5500);
+    emoteFeed.add(name, color, text);
   };
   const sendEmote = () => {
     const now = performance.now();
@@ -968,33 +844,31 @@ async function main() {
   };
 
   // --- ランキング ---
-  const board = serverUrl ? new LeaderboardClient(serverUrl) : null;
-  const raceMaps = MAPS.filter((m) => m.race);
-  /** まだランキングに送っていない自己ベストを送る（名前を入れていなければ送らない） */
-  async function uploadBest(def: MapDefinition, car: string): Promise<SubmitResult | null> {
-    const name = loadPlayerName().trim();
-    const key = courseKey(def);
-    const record = loadRecord(key, car);
-    if (!board || !name || !record || record.ghost.length === 0 || uploadedTotal(key, car) === record.total) return null;
-    return board.submit(key, car, { player: playerId(), name, total: record.total, laps: record.laps, ghost: record.ghost });
-  }
+  const ranking = new Ranking(serverUrl ? new LeaderboardClient(serverUrl) : null, {
+    onRace: (course, car, r) => raceAgainst(course, car, r),
+    onOpenChange: (open) => {
+      keyboard.enabled = !open;
+      touch.enabled = !open;
+    },
+  });
+  const rankingPanel = ranking.panel;
   /** タイムアタックでゴールしたら、自己ベストをランキングに送って順位を結果に出す */
   function reportToRanking(newBest: boolean) {
-    raceHud.showRankingButton(board !== null);
-    if (!board) return;
+    raceHud.showRankingButton(ranking.available);
+    if (!ranking.available) return;
     if (!loadPlayerName().trim()) {
       raceHud.setResultNote('名前を入れると、自己ベストがランキングに載ります（ランキングの画面で入力）');
       return;
     }
     if (!newBest) return;
     raceHud.setResultNote('ランキングに送っています…');
-    uploadBest(level.def, vehicle().id).then(
+    ranking.uploadBest(level.def, vehicle().id).then(
       (r) => r && raceHud.setResultNote(r.rank !== null ? `ランキング ${r.rank}位` : `ランキングの上位には入りませんでした`),
       () => raceHud.setResultNote('ランキングに送れませんでした（通信エラー）'),
     );
   }
   /** ランキングで選んだ人のゴーストと、そのコース・車でタイムアタックする */
-  function raceAgainst(course: string, car: string, r: NonNullable<typeof rival>) {
+  function raceAgainst(course: string, car: string, r: RankedGhost) {
     const map = MAPS.findIndex((m) => m.id === course);
     const vehicleIndex = VEHICLE_PRESETS.findIndex((v) => v.id === car);
     if (vehicleIndex >= 0 && vehicleIndex !== carIndex) selectCar(vehicleIndex);
@@ -1006,47 +880,12 @@ async function main() {
     setRival(r);
     hud.toast(`${r.name} さんのゴーストと対戦（${formatTime(r.total)}）`);
   }
-  const rankingPanel = new RankingPanel(
-    raceMaps.map((m) => {
-      const p = courseProfile(m);
-      return { id: m.id, label: m.name, note: p.kind === 'free' ? undefined : `${(p.length / 1000).toFixed(1)}km・${p.kind === 'loop' ? `${p.laps}周` : p.kind === 'roundtrip' ? '往復' : '一本道'}` };
-    }),
-    VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label })),
-    {
-      load: async (course, car) => {
-        const def = MAPS.find((m) => m.id === course);
-        if (!def) return { entries: [], mine: new Set<string>() };
-        // ランキングはコースの形の版ごと（コースを直す前の記録は出さない）
-        const key = courseKey(def);
-        const cars = car === ALL_CARS ? VEHICLE_PRESETS.map((v) => v.id) : [car];
-        const boards = await Promise.all(
-          cars.map(async (id) => {
-            // 前に走った自己ベストも、名前を入れた後なら送る
-            await uploadBest(def, id).catch(() => null);
-            return { car: id, entries: await board!.list(key, id) };
-          }),
-        );
-        const mine = new Set(cars.map((id) => myEntryId(key, id)).filter((id): id is string => id !== null));
-        return { entries: mergeBoards(boards), mine };
-      },
-      onRace: async (course, entry) => {
-        const def = MAPS.find((m) => m.id === course);
-        if (!def) return;
-        const ghost = await board!.ghost(courseKey(def), entry.car, entry.id);
-        raceAgainst(course, entry.car, { name: entry.name, total: entry.total, ghost });
-      },
-      onOpenChange: (open) => {
-        keyboard.enabled = !open;
-        touch.enabled = !open;
-      },
-    },
-  );
   function openRanking() {
-    if (!board) {
+    if (!ranking.available) {
       hud.toast('このサイトにはオンライン用のサーバーがまだ設定されていません');
       return;
     }
-    rankingPanel.open(level.def.race ? level.def.id : raceMaps[0].id, ALL_CARS);
+    ranking.open(level.def);
   }
   const cycleCamera = () => {
     cameraRig.cycle();
@@ -1064,20 +903,14 @@ async function main() {
     const online = net.status !== 'offline' && net.status !== 'error';
     netStatus.classList.toggle('hidden', !online);
     if (!online) return;
-    const state = net.status === 'online' ? '' : '（接続中…）';
-    // 人数が増えても大きくならないよう、色の点を一列に並べ、名前は最初の人だけ出す
-    const others = remoteCars.list;
-    const dots = [carMesh.color, ...others.map((p) => PLAYER_COLORS[p.color % PLAYER_COLORS.length])]
-      .map((c) => `<span class="ns-dot" style="background:${hex(c)}"></span>`)
-      .join('');
-    const who = others.length === 0 ? '他の人を待っています' : `${escapeHtml(others[0].name)}${others.length > 1 ? ` ほか${others.length - 1}人` : ''}`;
-    // 対戦の様子は、人数の代わりに右上に出す（2行のまま）
-    const corner = roomRace
-      ? `<span class="ns-race">${roomRace.phase === 'entry' ? 'エントリー中' : '対戦中'}</span>`
-      : `<span class="ns-count">${others.length + 1}/${MAX_PLAYERS}</span>`;
-    netStatus.innerHTML =
-      `<div class="ns-head"><span class="ns-label">ROOM</span> <span class="code">${roomCode}</span>${state}${corner}</div>` +
-      `<div class="ns-who"><span class="ns-dots">${dots}</span><span class="ns-names">${who}</span></div>`;
+    netStatus.innerHTML = netStatusHtml({
+      roomCode,
+      connected: net.status === 'online',
+      selfColor: carMesh.color,
+      others: remoteCars.list.map((p) => ({ name: p.name, color: PLAYER_COLORS[p.color % PLAYER_COLORS.length] })),
+      race: roomRace?.phase ?? null,
+      maxPlayers: MAX_PLAYERS,
+    });
   };
   const net: NetClient = new NetClient({
     onStatus: (status, detail) => {
@@ -1088,7 +921,7 @@ async function main() {
           roomRace = null;
           onlineRacePanel.update(null);
         }
-        for (const id of remoteHornTimers.keys()) remoteHorn(id, false);
+        horns.stopRemote();
       }
       if (status === 'offline' || status === 'error') {
         remoteCars.clear();
@@ -1131,12 +964,12 @@ async function main() {
           break;
         case 'leave':
           hud.toast(`${nameOf(m.id)} が抜けました`);
-          remoteHorn(m.id, false);
+          horns.remote(m.id, false);
           remoteCars.remove(m.id);
           if (roomRace?.phase === 'entry') onlineRacePanel.update(onlineRaceView());
           break;
         case 'horn':
-          remoteHorn(m.id, m.on);
+          horns.remote(m.id, m.on);
           break;
         case 'emote':
           showEmote(m.id, m.text);
@@ -1249,7 +1082,7 @@ async function main() {
         },
       },
       { label: () => (lightsOn ? 'ライト ON' : 'ライト OFF'), run: toggleLights, place: 'side' },
-      { label: () => 'ホーン', run: () => {}, hold: (down) => (hornInput.touch = down), place: 'side' },
+      { label: () => 'ホーン', run: () => {}, hold: (down) => (horns.input.touch = down), place: 'side' },
       { label: () => 'セリフ', run: sendEmote, place: 'side' },
       { label: () => 'エントリー', run: () => onlineRacePanel.open(), visible: () => roomRace?.phase === 'entry' && !onlineRacePanel.isOpen },
     ],
@@ -1257,393 +1090,77 @@ async function main() {
     () => (menu.isOpen ? menu.close() : menu.openPause()),
   );
 
-  // --- メニュー: タイトル → トップ画面でプレイモードを選び、コース・対戦相手・車などを順に選ぶ（走っている間は Esc / ☰ でポーズ） ---
-  /** メニューで選んでいる途中の内容（最後に「スタート」を押したときに反映する） */
-  const draft = {
-    map: level.def.id,
-    car: vehicle().id,
-    npc: NPC_LEVELS[npcLevelIndex].id,
-    rival: battleRival().id,
-    rule: battleRule as BattleRule,
-    rough: battleRough,
-    time: env.time,
-    weather: env.weather,
-    opponentLights,
-  };
-  const draftMap = () => MAPS.find((m) => m.id === draft.map) ?? MAPS[0];
-  const draftCar = () => VEHICLE_PRESETS.find((v) => v.id === draft.car) ?? VEHICLE_PRESETS[0];
-  const draftRival = () => RIVALS.find((r) => r.id === draft.rival) ?? RIVALS[0];
-  const draftNpc = () => NPC_LEVELS.find((l) => l.id === draft.npc) ?? NPC_LEVELS[0];
-  const carLabel = (id: string) => VEHICLE_PRESETS.find((v) => v.id === id)?.label ?? id;
-  const mapLabel = (id: string) => MAPS.find((m) => m.id === id)?.name ?? id;
-  /** 車の見た目（メニューの右側で回して見せる） */
-  const carPreview = new CarPreview();
-  /** 選び始めたときの時間帯・天気（得意な条件のないライバルに選び直したら、これに戻す） */
-  let draftBaseEnv = { time: env.time, weather: env.weather };
-  /** 選び始めるときに、下書きを今の状態にする（レースならレース用のコースから選ぶ） */
-  const beginDraft = (raceOnly: boolean) => {
-    draft.map = raceOnly && !level.def.race ? raceMaps[0].id : level.def.id;
-    draft.car = vehicle().id;
-    draft.npc = NPC_LEVELS[npcLevelIndex].id;
-    draft.rival = battleRival().id;
-    draft.rule = battleRule;
-    draft.rough = battleRough;
-    draft.time = env.time;
-    draft.weather = env.weather;
-    draft.opponentLights = opponentLights;
-    draftBaseEnv = { time: env.time, weather: env.weather };
-  };
-  /** 対戦相手を選んだとき: コースと時間帯・天気を、まずライバルの得意なものにしておく（後の画面で変えられる） */
-  const draftRivalDefaults = () => {
-    const r = draftRival();
-    draft.map = r.course;
-    const c = r.conditions ?? draftBaseEnv;
-    draft.time = c.time;
-    draft.weather = c.weather;
-    draft.opponentLights = defaultOpponentLights(draft);
-  };
-  /** ライバルの得意な時間帯・天気の書き方（「夜・雨」。なければ空） */
-  const rivalConditionsLabel = (r: Rival) =>
-    r.conditions ? `${TIMES_OF_DAY.find((t) => t.id === r.conditions!.time)!.label}・${WEATHERS.find((w) => w.id === r.conditions!.weather)!.label}` : '';
-  /** 選んだ内容を反映して、そのモードで始める */
-  const applyDraft = (mode: RaceMode | 'free') => {
-    setEnvironment(draft.time, draft.weather, false);
-    const car = VEHICLE_PRESETS.findIndex((v) => v.id === draft.car);
-    if (car >= 0 && car !== carIndex) selectCar(car);
-    npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === draft.npc));
-    battleIndex = Math.max(0, RIVALS.findIndex((r) => r.id === draft.rival));
-    battleRule = draft.rule;
-    battleRough = draft.rough;
-    opponentLights = draft.opponentLights;
-    if (mode === 'free') stopRace();
-    const map = MAPS.findIndex((m) => m.id === draft.map);
-    if (map >= 0 && map !== mapIndex && !mapLocked()) {
-      loadMap(map);
-      // 同じ部屋の全員のマップも切り替える
-      net.send({ t: 'map', map: mapIndex });
-    }
-    if (mode !== 'free') startRace(mode);
-    else resetCar();
-  };
-
-  /** note: 説明の下に添える一言（部屋の全員が移動する、など） */
-  const courseScreen = (raceOnly: boolean, home?: string, note?: string): MenuScreen => ({
-    title: 'コース',
-    en: 'COURSE',
-    groups: [
-      {
-        choices: () => {
-          const maps = MAPS.filter((m) => !raceOnly || m.race);
-          // ライバルの得意なコースを先頭に
-          if (home) maps.sort((a, b) => Number(b.id === home) - Number(a.id === home));
-          return maps.map((m) => {
-            const p = courseProfile(m);
-            return {
-              id: m.id,
-              label: m.name,
-              badge: m.id === home ? '得意' : undefined,
-              note: p.kind === 'free' ? '自由に走る' : `${(p.length / 1000).toFixed(1)}km・${p.kind === 'loop' ? `周回 ${p.laps}周` : p.kind === 'roundtrip' ? '往復' : '一本道'}`,
-            };
-          });
-        },
-        selected: () => draft.map,
-        select: (id) => (draft.map = id),
-      },
-    ],
-    detail: () => {
-      if (!home) return courseDetail(draftMap(), carLabel, note ? { note } : undefined);
-      const r = draftRival();
-      const script = RIVAL_DIALOGUES[r.id];
-      // セリフが得意なコースだけのライバルなら、ほかのコースを選んだときに知らせる
-      const silent = draftMap().id !== home && script && (script.onlyHomeCourse ?? true);
-      return courseDetail(draftMap(), carLabel, {
-        badge: draftMap().id === home ? `${r.name}の得意コース` : undefined,
-        note: `${silent ? `${r.name}のセリフは、得意コースの「${mapLabel(home)}」でのバトルだけ出ます。` : ''}先行後追いは、周回コースでも1周で1本です`,
-      });
-    },
-  });
-  const carScreen: MenuScreen = {
-    title: '自分の車',
-    en: 'MACHINE',
-    groups: [
-      {
-        choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `${driveOf(v) ?? ''}${driveOf(v) ? '・' : ''}最高 ${Math.round(topSpeedOf(v.params) * 3.6)}km/h` })),
-        selected: () => draft.car,
-        select: (id) => (draft.car = id),
-      },
-    ],
-    detail: () => carDetail(draftCar(), carPreview),
-  };
-  const npcScreen: MenuScreen = {
-    title: 'NPCの強さ',
-    en: 'OPPONENTS',
-    groups: [
-      {
-        choices: () => NPC_LEVELS.map((l) => ({ id: l.id, label: l.label })),
-        selected: () => draft.npc,
-        select: (id) => (draft.npc = id),
-      },
-    ],
-    detail: () => npcDetail(draftNpc(), NPC_COUNT),
-  };
-  const rivalScreen: MenuScreen = {
-    title: '対戦相手',
-    en: 'RIVAL',
-    groups: [
-      {
-        choices: () => {
-          const beaten = loadBeatenRivals();
-          return RIVALS.map((r) => ({
-            id: r.id,
-            label: r.name,
-            badge: beaten.has(r.id) ? 'WIN' : undefined,
-            note: `${carLabel(r.car)}・${rivalLevel(r).label}`,
-          }));
-        },
-        selected: () => draft.rival,
-        select: (id) => {
-          draft.rival = id;
-          draftRivalDefaults();
-        },
-      },
-    ],
-    detail: () => {
-      const r = draftRival();
-      return rivalDetail(r, rivalLevel(r), { car: carLabel(r.car), course: [mapLabel(r.course), rivalConditionsLabel(r)].filter(Boolean).join('・'), beaten: loadBeatenRivals().has(r.id) }, carPreview);
-    },
-  };
-  const ruleGroup: MenuGroup = {
-    title: 'ルール',
-    choices: () => BATTLE_RULES,
-    selected: () => draft.rule,
-    select: (id) => (draft.rule = id as BattleRule),
-  };
-  /** ラフプレー（できるライバルのときだけ出す） */
-  const roughGroup: MenuGroup = {
-    title: 'ラフプレー',
-    choices: () => [
-      { id: 'off', label: 'なし' },
-      { id: 'on', label: 'あり', note: draftRival().roughNote ?? 'ぶつけてくる' },
-    ],
-    selected: () => (draft.rough ? 'on' : 'off'),
-    select: (id) => (draft.rough = id === 'on'),
-  };
-  const ruleScreen: MenuScreen = {
-    title: 'ルール',
-    en: 'RULE',
-    get groups() {
-      return draftRival().rough ? [ruleGroup, roughGroup] : [ruleGroup];
-    },
-    detail: () => {
-      const rule = BATTLE_RULES.find((r) => r.id === draft.rule)!;
-      const r = draftRival();
-      const rough = r.rough
-        ? [
-            draft.rough
-              ? `ラフプレーあり: ${r.name}は${r.roughHow ?? 'コーナーの手前で並びかけ、ぶつけてコースの外へ押し出そうとしてくる。並ばれたら気をつけて'}。`
-              : `ラフプレーなし（「あり」にすると、${r.name}が${r.roughNote ?? 'ぶつけてくる'}）。`,
-          ]
-        : [];
-      return textDetail({
-        kicker: `VS ${r.name}`,
-        title: rule.label,
-        big: draft.rule === 'side' ? '1:1' : 'SD',
-        lines: [
-          ...(draft.rule === 'side'
-            ? ['2台が横に並んでスタートし、先にゴールしたほうの勝ち。']
-            : [
-                `先行と後追いに分かれて1本ずつ走り、ゴールの時点で判定する（サドンデス）。`,
-                `後追いが抜いて先にゴールすれば後追いの勝ち。後追いが先行から ${SAFE_SECONDS}秒より遅れてゴールすれば先行の勝ち。`,
-                `${SAFE_SECONDS}秒以内に続いてゴールすれば引き分けで、先行と後追いを入れ替えて次の1本へ。`,
-              ]),
-          ...rough,
-        ],
-      });
-    },
-  };
-  const timeGroup: MenuGroup = {
-    title: '時間帯',
-    choices: () => TIMES_OF_DAY,
-    selected: () => draft.time,
-    select: (id) => {
-      draft.time = id as TimeOfDay;
-      draft.opponentLights = defaultOpponentLights(draft);
-    },
-  };
-  const weatherGroup: MenuGroup = {
-    title: '天気',
-    choices: () => WEATHERS,
-    selected: () => draft.weather,
-    select: (id) => {
-      draft.weather = id as Weather;
-      draft.opponentLights = defaultOpponentLights(draft);
-    },
-  };
-  /** 相手（NPC・ライバル）がライトをつけて走るか。時間帯・天気を選ぶと、それに合わせた方に戻る */
-  const opponentLightsGroup: MenuGroup = {
-    title: '相手のライト',
-    choices: () => [
-      { id: 'on', label: 'つける' },
-      { id: 'off', label: '消す', note: draft.time === 'night' ? '暗い中で見えにくい' : undefined },
-    ],
-    selected: () => (draft.opponentLights ? 'on' : 'off'),
-    select: (id) => (draft.opponentLights = id === 'on'),
-  };
-  /** 時間帯・天気の画面。withOpponents なら、相手のライトも選べる */
-  const conditionsScreen = (withOpponents: boolean): MenuScreen => ({
-    title: '時間帯・天気',
-    en: 'CONDITIONS',
-    groups: withOpponents ? [timeGroup, weatherGroup, opponentLightsGroup] : [timeGroup, weatherGroup],
-    detail: () =>
-      conditionsDetail(TIMES_OF_DAY.find((t) => t.id === draft.time)!, WEATHERS.find((w) => w.id === draft.weather)!, [
-        ['コース', draftMap().name],
-        ['車', draftCar().label],
-        ...(withOpponents ? [['相手のライト', draft.opponentLights ? 'つける' : '消す'] as [string, string]] : []),
-      ]),
-  });
-  const envScreen = conditionsScreen(false);
-  const opponentEnvScreen = conditionsScreen(true);
-  const envSummary = () => `${TIMES_OF_DAY.find((t) => t.id === draft.time)!.label}・${WEATHERS.find((w) => w.id === draft.weather)!.label}`;
-  /** プレイモードの説明。後ろに薄く大きく、英語の最初の語（big で変えられる）を出す */
-  const modeDetail = (title: string, en: string, lines: string[], big = en.split(' ')[0]) => () =>
-    textDetail({
-      kicker: en,
-      title,
-      big,
-      // コース・車・時間帯はこの後の画面で選ぶので、ここには出さない
-      lines,
-    });
-  const menuModes: MenuMode[] = [
-    {
-      id: 'free',
-      label: '自由に走る',
-      en: 'FREE RUN',
-      note: '好きなマップを自由にドライブ',
-      detail: modeDetail('自由に走る', 'FREE RUN', ['街・峠・サーキット・首都高を、時間を気にせず走る。', 'オンラインの部屋に入れば、友だちと同じマップを走れます。']),
-      begin: () => beginDraft(false),
-      screens: () => [courseScreen(false), carScreen, envScreen],
-      summary: () => `${draftMap().name} ／ ${draftCar().label} ／ ${envSummary()}`,
-      finish: () => applyDraft('free'),
-    },
-    {
-      id: 'timeAttack',
-      label: 'タイムアタック',
-      en: 'TIME ATTACK',
-      note: '自己ベストとゴーストに挑戦',
-      detail: modeDetail('タイムアタック', 'TIME ATTACK', ['アクセルを踏むとカウントダウン。自己ベストの走りがゴーストになって一緒に走る。', 'ゴールすると記録はランキングにも送られます。']),
-      begin: () => beginDraft(true),
-      screens: () => [courseScreen(true), carScreen, envScreen],
-      summary: () => `${draftMap().name} ／ ${draftCar().label} ／ ${envSummary()}`,
-      finish: () => applyDraft('timeAttack'),
-    },
-    {
-      id: 'npc',
-      label: 'NPCと対戦',
-      en: 'RACE',
-      note: `${NPC_COUNT}台のNPCとレース`,
-      detail: modeDetail('NPCと対戦', 'RACE', [`${NPC_COUNT}台のNPCが前に並び、最後尾からスタートして順位を競う。`, '強さは5段階から選べます。']),
-      begin: () => beginDraft(true),
-      screens: () => [courseScreen(true), npcScreen, carScreen, opponentEnvScreen],
-      summary: () => `${draftMap().name} ／ NPC ${draftNpc().label} ／ ${draftCar().label} ／ ${envSummary()}`,
-      finish: () => applyDraft('npc'),
-    },
-    {
-      id: 'battle',
-      label: 'ライバルとバトル',
-      en: 'BATTLE',
-      note: '1対1。先行後追いも選べる',
-      detail: modeDetail('ライバルとバトル', 'BATTLE', [`${RIVALS.length}人のライバルと1対1。横に並んでのスタートか、先行後追いのサドンデスで勝負する。`, `勝った相手: ${loadBeatenRivals().size} / ${RIVALS.length}`]),
-      begin: () => {
-        beginDraft(true);
-        draftRivalDefaults();
-      },
-      screens: () => [rivalScreen, ruleScreen, courseScreen(true, draftRival().course), carScreen, opponentEnvScreen],
-      summary: () => `VS ${draftRival().name} ／ ${BATTLE_RULES.find((r) => r.id === draft.rule)!.label}${draft.rough && draftRival().rough ? '・ラフプレー' : ''} ／ ${draftMap().name} ／ ${draftCar().label}`,
-      finish: () => applyDraft('battle'),
-    },
-  ];
-  /**
-   * いまのレースのモードのまま、選ぶ画面をもう一度たどって選び直す（ポーズ画面・ゴールの画面から）。
-   * 最初はいまの相手・ルール・コース・車・時間帯・天気が選ばれていて、変えたいところだけ変えればよい
-   */
-  function openChangeFlow() {
-    const base = menuModes.find((m) => m.id === raceMode);
-    if (!base) return;
-    // ライバルとバトルでも、相手の得意コースに戻さず、いまのコースから始める
-    menu.openFlow({ ...base, label: 'コース・車などを変える', en: 'CHANGE', begin: () => beginDraft(true) });
-  }
-  const settingDetail = (title: string, lines: string[]) => () => textDetail({ kicker: 'OPTIONS', title, lines });
-  /** 「プレイデータを消す」の確認の画面 */
+  /** 確認・入力の画面（プレイデータを消す、セリフを書き換える、など） */
   const confirmDialog = new ConfirmDialog();
-  const settingItems: MenuItem[] = [
-    { label: () => 'カメラ', value: () => cameraRig.modeName, run: () => cycleCamera(), detail: settingDetail('カメラ', ['走っているときの視点。走行中は C キーでも切り替えられます。']) },
-    {
-      label: () => 'ミラー',
-      value: () => MIRROR_MODES.find((m) => m.id === mirrors.mode)!.label,
-      run: () => {
-        const i = MIRROR_MODES.findIndex((m) => m.id === mirrors.mode);
-        mirrors.mode = MIRROR_MODES[(i + 1) % MIRROR_MODES.length].id;
-        saveMirrorMode(mirrors.mode);
+  const { menu, openChangeFlow } = createGameMenu({
+    level: () => level,
+    race: () => race,
+    raceMode: () => raceMode,
+    raceLabel,
+    current: () => ({
+      map: level.def.id,
+      car: vehicle().id,
+      npc: NPC_LEVELS[npcLevelIndex].id,
+      rival: battleRival().id,
+      rule: battleRule,
+      rough: battleRough,
+      time: env.time,
+      weather: env.weather,
+      opponentLights,
+    }),
+    apply: (mode, choices) => {
+      setEnvironment(choices.time, choices.weather, false);
+      const car = VEHICLE_PRESETS.findIndex((v) => v.id === choices.car);
+      if (car >= 0 && car !== carIndex) selectCar(car);
+      npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === choices.npc));
+      battleIndex = Math.max(0, RIVALS.findIndex((r) => r.id === choices.rival));
+      battleRule = choices.rule;
+      battleRough = choices.rough;
+      opponentLights = choices.opponentLights;
+      if (mode === 'free') stopRace();
+      const map = MAPS.findIndex((m) => m.id === choices.map);
+      if (map >= 0 && map !== mapIndex && !mapLocked()) {
+        loadMap(map);
+        // 同じ部屋の全員のマップも切り替える
+        net.send({ t: 'map', map: mapIndex });
+      }
+      if (mode !== 'free') startRace(mode);
+      else resetCar();
+    },
+    startRace: (mode) => startRace(mode),
+    stopRace,
+    resetCar,
+    openRanking,
+    hasRanking: ranking.available,
+    toast: (message) => hud.toast(message),
+    online: {
+      available: serverUrl !== '',
+      isOnline: () => net.isOnline,
+      selfId: () => net.id,
+      roomCode: () => roomCode,
+      roomRace: () => roomRace,
+      nameOf,
+      openJoin: (note) => onlinePanel.open(note),
+      openEntry: () => onlineRacePanel.open(),
+      openRace: (settings) => {
+        raceOpenSent = true;
+        net.send({ t: 'raceOpen', settings });
       },
-      detail: settingDetail('ミラー', ['走っているときに出すミラー。押すたびに「なし → バックミラー → サイドのみ → バック＋サイド」と切り替わります。', '古いスマホで重いときは「なし」にしてください。']),
+      leaveRoom,
     },
-    { label: () => '効果音', value: () => (sound.isMuted ? 'OFF' : 'ON'), run: toggleMute, detail: settingDetail('効果音', ['エンジン音・タイヤの音・ぶつかった音。M キーでも切り替えられます。']) },
-    {
-      label: () => 'BGM',
-      value: () => bgm.choiceLabel,
-      run: () => {
-        sound.start();
-        bgm.start(sound.context);
-        bgm.cycle();
-      },
-      visible: () => bgm.tracks.length > 0,
-      detail: settingDetail('BGM', ['ゲーム中に流す曲。押すたびに「なし → 曲 → シャッフル」と切り替わります。', `曲: ${bgm.tracks.map((t) => t.title).join('／')}`]),
-    },
-    {
-      label: () => 'BGMの音量',
-      value: () => bgm.volumeLabel,
-      run: () => bgm.cycleVolume(),
-      visible: () => bgm.isOn,
-      detail: settingDetail('BGMの音量', ['小・中・大の3段階。']),
-    },
-    {
-      label: () => 'ハンドル',
-      value: () => (touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'),
-      run: () => void toggleSteerMode(),
-      visible: () => touch.isShown,
-      detail: settingDetail('ハンドル（スマホ）', ['画面を左右になぞるか、スマホを傾けてハンドルを切る。']),
-    },
-    {
-      label: () => '全画面',
-      value: () => (isFullscreen() ? 'ON' : 'OFF'),
-      run: () => void enterFullscreen(),
-      visible: () => canRequestFullscreen() && !isStandalone(),
-      detail: settingDetail('全画面', ['ブラウザのアドレスバーなどを隠して、画面いっぱいで遊ぶ。']),
-    },
-    {
-      label: () => 'ホーム画面に追加',
-      value: () => '案内',
-      run: () => hud.toast('共有ボタン（□に↑）から「ホーム画面に追加」'),
-      visible: () => needsHomeScreenForFullscreen(),
-      detail: settingDetail('ホーム画面に追加（iPhone）', [
-        'アドレスバーを消して遊ぶには、Safari の共有ボタン（□に↑）から「ホーム画面に追加」を選び、追加したアイコンから開いてください。',
-      ]),
-    },
-    {
-      label: () => 'セリフ',
-      // 長いセリフは一覧の幅に収まるよう途中まで（全部は押したときの入力の画面で見える）
-      value: () => ([...emote].length > 8 ? `${[...emote].slice(0, 7).join('')}…` : emote),
-      run: editEmote,
-      detail: settingDetail('セリフ', [
-        '「セリフ」ボタン（キーボードは E）を押したときに言うセリフ。押すと入力の画面が出ます。',
-        `自分の車の上に吹き出しで出て、部屋にいれば全員に見えます。${MAX_EMOTE_LENGTH}文字まで。空にすると最初のセリフに戻ります。`,
-      ]),
-    },
-    {
-      label: () => 'プレイデータを消す',
-      value: () => '消す',
+    settings: settingItems({
+      cameraRig,
+      mirrors,
+      sound,
+      bgm,
+      touch,
+      cycleCamera,
+      toggleMute,
+      toggleSteerMode: () => void toggleSteerMode(),
+      emote: () => emote,
+      editEmote,
       // まちがって消さないよう、確認の画面で「消す」を選んだときだけ消す
-      run: () => {
+      clearPlayData: () => {
         void confirmDialog
           .ask({
             title: 'プレイデータを消す',
@@ -1659,181 +1176,16 @@ async function main() {
             menu.refresh();
           });
       },
-      detail: settingDetail('プレイデータを消す', [
-        'このブラウザに残っている、タイムアタックの自己ベストとゴースト・勝ったライバルの記録を消します。',
-        '名前・サウンド・ハンドルなどの設定は残ります。ランキングに送った記録は消えません。',
-        '押すと確認の画面が出ます。消した記録は元に戻せません。',
-      ]),
+      toast: (message) => hud.toast(message),
+    }),
+    onOpenChange: (open) => {
+      keyboard.enabled = !open;
+      touch.enabled = !open;
+      document.body.classList.toggle('menu-open', open);
+      if (!open) cameraRig.snap();
     },
-  ];
-  const openSettings = { label: () => '設定', en: 'OPTIONS', run: () => menu.openSettings(), detail: settingDetail('設定', ['カメラ・サウンド・ハンドルなど。']) };
-  /** オンラインの部屋に入る画面を開く（入った後はその部屋のコースをそのまま走る。対戦はメニューから） */
-  const openJoin = () => {
-    menu.close();
-    onlinePanel.open('友だちと同じ部屋コードを入れて「参加する」。入った後は、メニューの「対戦のエントリーを始める」で部屋のみんなとレースできます。');
-  };
-  const onlineItem: MenuItem = {
-    label: () => 'オンライン',
-    en: 'ONLINE',
-    note: () => (net.isOnline ? `部屋 ${roomCode} に参加中` : '部屋のみんなと走る・対戦する'),
-    major: true,
-    run: () => {
-      if (!net.isOnline) return openJoin();
-      menu.close();
-      if (roomRace?.phase === 'entry') onlineRacePanel.open();
-    },
-    detail: modeDetail('オンライン', 'ONLINE', [
-      '同じ部屋コードを入れた人と、同じコースを一緒に走れます（最大8人）。',
-      '部屋に入ったら、メニュー（Esc・☰）の「対戦のエントリーを始める」でコースと時間帯・天気を決めて、部屋のみんなとレースできます。',
-      'メニューの「コース・車などを変える」でコースを変えると、部屋の全員が同じコースに移動します。',
-    ]),
-  };
-  /** 自由に走っている間に、コースと車などを選び直す（メニューから。部屋にいれば全員が移動する） */
-  const freeChangeMode: MenuMode = {
-    id: 'freeChange',
-    label: 'コース・車などを変える',
-    en: 'CHANGE',
-    note: 'コース・車・時間帯と天気を選び直す',
-    detail: modeDetail('コース・車などを変える', 'CHANGE', ['いまのまま自由に走りながら、コース・車・時間帯・天気を選び直す。']),
-    begin: () => beginDraft(false),
-    screens: () => [courseScreen(false, undefined, net.isOnline ? '選んだコースに、部屋の全員が一緒に移動します。' : undefined), carScreen, envScreen],
-    summary: () => `${draftMap().name} ／ ${draftCar().label} ／ ${envSummary()}`,
-    finish: () => applyDraft('free'),
-    finishLabel: '走る',
-  };
-  /** オンライン対戦を言い出す: コースと時間帯・天気を決める（車は各自がエントリー画面で選ぶ） */
-  const onlineRaceMode: MenuMode = {
-    id: 'onlineRace',
-    label: '対戦のエントリー',
-    en: 'ENTRY',
-    note: '部屋のみんなとレース',
-    detail: modeDetail('対戦のエントリー', 'ONLINE ENTRY', ['コースと時間帯・天気を決めると、部屋の全員にエントリー画面が開きます。', '各自が車を選んで準備OKにしたら、スタートで一斉にカウントダウン。']),
-    begin: () => beginDraft(true),
-    screens: () => [courseScreen(true), envScreen],
-    summary: () => `${draftMap().name} ／ ${envSummary()}`,
-    finish: () => {
-      // 選んでいる間に、他の人がエントリーを始めていた・部屋から抜けていた
-      if (!net.isOnline) return hud.toast('部屋から抜けたので、エントリーを始められませんでした');
-      if (roomRace && roomRace.host !== net.id) return openRaceEntry();
-      const map = MAPS.findIndex((m) => m.id === draft.map);
-      raceOpenSent = true;
-      net.send({ t: 'raceOpen', settings: { map, time: draft.time, weather: draft.weather } });
-    },
-    finishLabel: 'エントリー開始',
-  };
-  /** オンライン対戦のエントリーを始める（コースと時間帯・天気を選ぶ画面へ） */
-  const openRaceEntry = () => {
-    if (roomRace?.phase === 'entry') {
-      menu.close();
-      onlineRacePanel.open();
-    } else if (roomRace) hud.toast('いまは対戦の最中です。終わったら始められます');
-    else menu.openFlow(onlineRaceMode);
-  };
-  const raceEntryItems: MenuItem[] = [
-    {
-      label: () => '対戦のエントリーを始める',
-      en: 'ENTRY',
-      run: openRaceEntry,
-      visible: () => net.isOnline && !roomRace && !(race && raceMode === 'online'),
-      detail: () =>
-        settingDetail('対戦のエントリーを始める', [
-          `部屋 ${roomCode} のみんなとレースする。コースと時間帯・天気を決めると、あなたが主催になって全員にエントリー画面が開きます。`,
-          '各自が車を選んで準備OK（または今回は見送る）にしたら、主催の「スタート」で一斉にカウントダウン。',
-          '先に誰かがエントリーを始めていたら、その対戦に参加します（同時に始めても、主催は1人だけです）。',
-        ])(),
-    },
-    {
-      label: () => 'エントリー画面',
-      en: 'ENTRY',
-      run: openRaceEntry,
-      visible: () => roomRace?.phase === 'entry',
-      detail: () =>
-        settingDetail('エントリー画面', [
-          roomRace && roomRace.host === net.id ? 'あなたが主催の対戦のエントリー画面を開く。' : `${nameOf(roomRace?.host ?? 0)} さんが始めた対戦のエントリー画面を開く。途中から部屋に来ても参加できます。`,
-          '車を選んで準備OKにするか、今回は見送るかを選べます。',
-        ])(),
-    },
-    {
-      label: () => '部屋に入る',
-      en: 'JOIN ROOM',
-      run: openJoin,
-      visible: () => serverUrl !== '' && !net.isOnline && race === null,
-      detail: () =>
-        settingDetail('部屋に入る', [
-          '部屋コードを入れて、オンラインの部屋に入る。前に入った部屋のコードが入った状態で開きます。',
-          '入った後は、部屋のいまのコースをそのまま走れます。',
-        ])(),
-    },
-  ];
-  const rankingItem: MenuItem = {
-    label: () => 'ランキング',
-    en: 'RANKING',
-    run: () => {
-      menu.close();
-      openRanking();
-    },
-    visible: () => board !== null,
-    detail: settingDetail('ランキング', ['タイムアタックの記録の一覧。上位の人のゴーストと対戦できます。']),
-  };
-  const nowInfo = () =>
-    `${level.def.name} ／ ${race ? raceLabel() : '自分で運転'} ／ ${vehicle().label} ／ ${TIMES_OF_DAY.find((t) => t.id === env.time)!.label}・${WEATHERS.find((w) => w.id === env.weather)!.label}`;
-  /** ポーズ画面の右側: いま走っているコースの地図 */
-  const pauseDetail = () => courseDetail(level.def, carLabel, { badge: race ? raceLabel() : '自由に走る' });
-  const menu = new GameMenu(
-    menuModes,
-    {
-      home: [onlineItem, rankingItem, openSettings],
-      pause: [
-        {
-          label: () => (race && raceMode === 'online' ? 'コースに戻る' : 'やり直す'),
-          en: 'RETRY',
-          run: () => (menu.close(), race && raceMode !== 'online' ? startRace(raceMode) : resetCar()),
-          detail: pauseDetail,
-        },
-        {
-          label: () => 'コース・車などを変える',
-          en: 'CHANGE',
-          run: () => (race ? openChangeFlow() : menu.openFlow(freeChangeMode)),
-          // オンライン対戦（エントリー中を含む）の間は、部屋のコースのまま
-          visible: () => (race ? raceMode !== 'online' : !roomRace),
-          detail: () =>
-            settingDetail('コース・車などを変える', [
-              race
-                ? `同じモードのまま、${raceMode === 'battle' ? '対戦相手・ルール・' : raceMode === 'npc' ? 'NPCの強さ・' : ''}コース・車・時間帯・天気を選び直してスタートからやり直す。`
-                : 'いまのまま自由に走りながら、コース・車・時間帯・天気を選び直す。',
-              'いまの内容が選ばれた状態で始まるので、変えたいところだけ変えて進めます。',
-              ...(!race && net.isOnline ? ['部屋に入っているので、コースを変えると部屋の全員が同じコースに移動します。'] : []),
-            ])(),
-        },
-        { label: () => (raceMode === 'online' ? '対戦から抜ける' : 'レースをやめる'), en: 'QUIT RACE', run: () => (menu.close(), stopRace()), visible: () => race !== null, detail: pauseDetail },
-        ...raceEntryItems,
-        {
-          label: () => '部屋から抜ける',
-          en: 'LEAVE ROOM',
-          run: () => {
-            menu.close();
-            leaveRoom();
-          },
-          visible: () => net.isOnline,
-          detail: () => settingDetail('部屋から抜ける', [`部屋 ${roomCode} から退出して、ひとりで走る。`, race && raceMode === 'online' ? '走っている対戦も途中でやめます。' : 'このメニューの「部屋に入る」から、また入れます。'])(),
-        },
-        { label: () => 'タイトルに戻る', en: 'TITLE', run: () => menu.openTitle(), detail: settingDetail('タイトルに戻る', ['最初のタイトル画面に戻る。何か押すと、プレイモード・コースを選び直せます。']) },
-        { ...rankingItem, visible: () => board !== null && race !== null && raceMode === 'timeAttack' },
-        openSettings,
-      ],
-      settings: settingItems,
-    },
-    {
-      info: nowInfo,
-      onOpenChange: (open) => {
-        keyboard.enabled = !open;
-        touch.enabled = !open;
-        document.body.classList.toggle('menu-open', open);
-        if (!open) cameraRig.snap();
-      },
-      canOpen: () => !onlinePanel.isOpen && !rankingPanel.isOpen && !onlineRacePanel.isOpen,
-    },
-  );
+    canOpen: () => !onlinePanel.isOpen && !rankingPanel.isOpen && !onlineRacePanel.isOpen,
+  });
   touch.refresh();
 
   async function toggleSteerMode() {
@@ -1878,8 +1230,8 @@ async function main() {
       const pad = gamepad.read();
       hud.setGamepadConnected(gamepad.isConnected);
       input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
-      hornInput.key = keyboard.isDown('KeyG');
-      updateHorn();
+      horns.input.key = keyboard.isDown('KeyG');
+      horns.update();
       // スタートの位置で待っている間は、アクセルを踏み直したらカウントダウンを始める
       if (race?.phase === 'ready' && input.throttle > 0 && !throttleHeld) beginRace();
       throttleHeld = input.throttle > 0;
@@ -1894,7 +1246,7 @@ async function main() {
       const hit = npcField?.takeHit();
       if (hit && !fall.falling) {
         level.car.bump(hit.push, hit.yawRate, hit.time);
-        if (talk) talk.bumped = true;
+        talk.bumped();
       }
       level.physics.world.step();
       npcField?.afterStep(dt);
@@ -1944,7 +1296,8 @@ async function main() {
         handleRaceEvents(r);
         announceNpcFinishes(r);
         judgeSuddenDeath();
-        updateTalk();
+        const npc = npcField?.npcs[0];
+        if (npc) talk.update({ race: r, npc, level, car: curr, impact: lastImpact });
         if (debugWhere) {
           const d = r.distance(curr.x, curr.z);
           debugWhere.textContent = `${r.lap}周目 ${Math.round(level.course?.closed ? d - (r.lap - 1) * level.course.length : d)}m`;
@@ -1964,7 +1317,7 @@ async function main() {
       carMesh.update(s);
       view.followCar(carMesh.root);
       remoteCars.render(performance.now());
-      updateRemoteHornVolumes();
+      horns.updateVolumes();
       npcField?.render(alpha);
       // 他の人や NPC のヘッドライトで、自分の画面の道も照らす（近い車だけ）
       const litCars = [...remoteCars.litCars(), ...(npcField?.litCars() ?? [])];
@@ -2059,10 +1412,6 @@ async function main() {
     onlinePanel.presetRoom(invited);
     onlinePanel.open();
   }
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 main().catch((err) => {

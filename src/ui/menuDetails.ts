@@ -6,7 +6,8 @@ import type { CarPreview } from '../render/carPreview';
 import type { VehiclePreset } from '../sim/vehicle';
 import { carStats, driveOf } from './carStats';
 import { COURSE_NOTES, type CourseProfile, courseProfile, profilePath } from './courseInfo';
-import { type DetailView, escapeHtml } from './menu';
+import type { DetailView } from './menu';
+import { escapeHtml } from './html';
 
 /** メニューの右側の説明（コース・車・ライバルなど）を作る */
 
