@@ -256,13 +256,14 @@ npm run dev                             # 別のターミナルで
 | `server/` | マルチプレイの中継サーバー（Cloudflare Workers + Durable Objects） |
 | `src/net/` | 通信内容の定義、WebSocket 接続、受信した車の補間 |
 | `src/core/` | 固定タイムステップのゲームループ、キーボード・ゲームパッド入力 |
-| `src/game/` | マップ1つ分（物理ワールド・車・描画物）の生成と破棄、他のプレイヤーの車 |
+| `src/game/` | マップ1つ分（物理ワールド・車・描画物）の生成と破棄、他のプレイヤーの車、ランキング（`ranking.ts`）、クラクション（`horn.ts`） |
+| `src/main.ts` | 起動処理と、それぞれの部品をつなぐところ（レースの開始・終了、オンラインの部屋、毎フレームの更新） |
 | `src/audio/` | Web Audio API で合成する効果音（エンジン・スキール・衝突） |
 | `src/sim/` | 車両モデル（`vehicle.ts`、描画非依存）、Rapier 物理ワールド、車 |
 | `src/race/` | タイムアタックと NPC: コースの抽出と中心線、周回・近道・逆走の判定、ゴースト、自己ベストの保存、レーシングラインと NPC の運転 |
 | `src/map/` | マップ定義（`maps.ts`）。タイルマップの解析（`tilemap.ts`）と、中心線で描く道路（`road.ts`）。障害物配置 |
 | `src/render/` | Three.js のシーン、マップ・車・標識のメッシュ、カメラ |
-| `src/ui/` | HUD（速度・ギア・操作説明・通知）、メニュー（`menu.ts` 画面の流れ、`menuDetails.ts` 右側の説明、`courseInfo.ts` コースの形と高低差、`carStats.ts` 車の性能の棒） |
+| `src/ui/` | HUD（速度・ギア・操作説明・通知）、メニュー（`menu.ts` 画面の流れ、`menuFlows.ts` プレイモードごとの画面とポーズ画面の項目、`settingsItems.ts` 設定の項目、`menuDetails.ts` 右側の説明、`courseInfo.ts` コースの形と高低差、`carStats.ts` 車の性能の棒） |
 
 - 車の挙動の調整は `src/sim/vehicle.ts` の `DEFAULT_VEHICLE_PARAMS`。
 - マップは `src/map/maps.ts` の文字グリッドを書き換えるだけで変更・追加できる（凡例は `src/map/tilemap.ts`）。標識やカーブのガードレールもここで指定する。
