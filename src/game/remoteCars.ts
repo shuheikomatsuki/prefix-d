@@ -1,4 +1,4 @@
-import type RAPIER from '@dimforge/rapier3d-compat';
+import type RAPIER from '@dimforge/rapier3d';
 import * as THREE from 'three';
 import { RemoteTrack } from '../net/interpolation';
 import type { CarState, PlayerInfo } from '../net/protocol';

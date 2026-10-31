@@ -1,13 +1,16 @@
-import RAPIER from '@dimforge/rapier3d-compat';
+import type RAPIER from '@dimforge/rapier3d';
 import type { MapObstacles } from '../map/obstacles';
 
 export type Rapier = typeof RAPIER;
 
 let ready: Promise<Rapier> | null = null;
 
-/** Rapier（WASM）の初期化。何度呼んでも1回だけ実行される */
+/**
+ * Rapier（WASM）を読み込む。何度呼んでも1回だけ実行される。
+ * 別ファイルに分けて後から読み込むので、ゲーム本体の JS が軽くなり、WASM はそのままの形でストリーミングでコンパイルされる
+ */
 export function loadRapier(): Promise<Rapier> {
-  ready ??= RAPIER.init().then(() => RAPIER);
+  ready ??= import('@dimforge/rapier3d').then((m) => m.default);
   return ready;
 }
 
