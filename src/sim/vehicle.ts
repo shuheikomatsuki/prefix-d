@@ -287,7 +287,7 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
       wheelBase: 2.51,
       steerRate: 2.5,
       // 軽い4WD で、低速コーナーの脱出に強い（高速では GT-R に分がある）
-      maxLateralAccel: 9.4,
+      maxLateralAccel: 9.5,
       highSpeedGain: 0.04,
       lateralGrip: 11,
     }),
