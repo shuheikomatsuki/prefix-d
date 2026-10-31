@@ -1,5 +1,6 @@
 import type { Standing } from '../game/npcRace';
 import { formatTime } from '../race/timeAttack';
+import { escapeHtml, hex } from './html';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -19,11 +20,6 @@ export interface RaceResult {
   notSaved: boolean;
 }
 
-const hexColor = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
 
 /** 順位を英語の序数にする（1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st） */
 export function ordinal(n: number): string {
@@ -121,7 +117,7 @@ export class RaceHud {
     // NPC 対戦では自己ベストを比べないので出さない
     const best = s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
     this.bestEl.textContent = s.battle ? s.battle : s.position ? '' : s.rival ? `VS ${s.rival.name} ${formatTime(s.rival.total)}　${best}` : best;
-    const field = s.field && !s.finished ? s.field.map((r, i) => `<li class="${r.isPlayer ? 'me' : ''}"><span class="dot" style="background:${hexColor(r.color)}"></span>${ordinal(r.rank ?? i + 1)} ${escapeHtml(r.name)}</li>`).join('') : '';
+    const field = s.field && !s.finished ? s.field.map((r, i) => `<li class="${r.isPlayer ? 'me' : ''}"><span class="dot" style="background:${hex(r.color)}"></span>${ordinal(r.rank ?? i + 1)} ${escapeHtml(r.name)}</li>`).join('') : '';
     if (field !== this.shownField) {
       this.shownField = field;
       this.fieldEl.innerHTML = field;
@@ -194,7 +190,7 @@ export class RaceHud {
       this.noticeTimer = undefined;
       return;
     }
-    this.notice.innerHTML = `<span class="flag"></span><span class="dot" style="background:${hexColor(n.color)}"></span><b>${escapeHtml(n.name)}</b> がゴール<span class="detail">${escapeHtml(n.text)}</span>`;
+    this.notice.innerHTML = `<span class="flag"></span><span class="dot" style="background:${hex(n.color)}"></span><b>${escapeHtml(n.name)}</b> がゴール<span class="detail">${escapeHtml(n.text)}</span>`;
     this.notice.classList.add('visible');
     this.noticeTimer = window.setTimeout(() => this.nextNotice(), 2800);
   }
@@ -251,7 +247,7 @@ export class RaceHud {
     const winner = rows[0]?.total ?? null;
     const body = rows
       .map((r, i) => {
-        const color = hexColor(r.color);
+        const color = hex(r.color);
         const time =
           r.total === null
             ? `<span class="note">走行中${totalLaps > 1 ? `（${Math.min(r.laps + 1, totalLaps)}周目）` : ''}</span>`

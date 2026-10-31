@@ -1,5 +1,5 @@
 import { type DialogueLine, lineDuration, splitLine } from '../race/dialogue';
-import { escapeHtml } from './menu';
+import { escapeHtml } from './html';
 import { SHOW_PORTRAITS } from './portraits';
 
 /** 話す人の表示（名前と、あれば画像） */

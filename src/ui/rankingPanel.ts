@@ -2,15 +2,12 @@ import type { CarEntry } from '../net/leaderboard';
 import { MAX_ENTRY_NAME_LENGTH } from '../net/leaderboard';
 import { formatTime } from '../race/timeAttack';
 import { loadPlayerName, savePlayerName } from './onlinePanel';
+import { escapeHtml } from './html';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const e = document.getElementById(id);
   if (!e) throw new Error(`#${id} not found`);
   return e as T;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 export interface BoardChoice {

@@ -1,14 +1,11 @@
 import type { RaceState } from '../net/protocol';
 import type { BoardChoice } from './rankingPanel';
+import { escapeHtml, hex } from './html';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const e = document.getElementById(id);
   if (!e) throw new Error(`#${id} not found`);
   return e as T;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 /** エントリー画面に出す、部屋の1人分 */
@@ -37,7 +34,6 @@ export interface OnlineRacePanelHandlers {
   onOpenChange: (open: boolean) => void;
 }
 
-const hexColor = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
 /**
  * オンライン対戦のエントリー画面: 言い出した人がコース・時間帯・天気を決めた後、各自が車を選んで「準備OK」か「今回は見送る」にする。
@@ -162,7 +158,7 @@ export class OnlineRacePanel {
         const order = race.entrants.indexOf(m.id);
         const skipped = race.out.includes(m.id);
         const car = m.id === selfId ? this.car : m.car;
-        return `<li class="${order >= 0 ? 'ready' : skipped ? 'out' : ''}${m.id === selfId ? ' me' : ''}"><span class="dot" style="background:${hexColor(m.color)}"></span><span class="name">${escapeHtml(m.name)}${
+        return `<li class="${order >= 0 ? 'ready' : skipped ? 'out' : ''}${m.id === selfId ? ' me' : ''}"><span class="dot" style="background:${hex(m.color)}"></span><span class="name">${escapeHtml(m.name)}${
           m.id === race.host ? '<i>主催</i>' : ''
         }</span><span class="car">${escapeHtml(this.carLabel(car))}</span><span class="mark">${order >= 0 ? '準備OK' : skipped ? '見送り' : '選択中'}</span></li>`;
       })

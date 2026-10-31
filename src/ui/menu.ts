@@ -1,3 +1,5 @@
+import { escapeHtml } from './html';
+
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const e = document.getElementById(id);
   if (!e) throw new Error(`#${id} not found`);
@@ -75,10 +77,6 @@ export interface MenuItem {
 }
 
 type Stage = 'title' | 'home' | 'mode' | 'pause' | 'settings';
-
-export function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
