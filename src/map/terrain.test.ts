@@ -62,7 +62,7 @@ describe('terrain', () => {
       car.slope = (x, z) => terrain.gradientAt(x, z);
       const fx = Math.sin(p.yaw + yawOffset);
       const fz = Math.cos(p.yaw + yawOffset);
-      car.body.setLinvel({ x: fx * 15, y: 0, z: fz * 15 }, true);
+      car.setVelocity(fx * 15, fz * 15);
       for (let i = 0; i < 60; i++) {
         car.applyInput({ throttle: 0, brake: 0, steer: 0 }, 1 / 60);
         physics.world.step();

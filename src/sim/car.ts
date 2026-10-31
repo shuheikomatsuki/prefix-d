@@ -62,6 +62,13 @@ const GRASS_GRIP = 0.55;
 /** 草地の転がり抵抗: 減速度 = GRASS_DRAG_BASE + GRASS_DRAG_PER_SPEED * v [m/s^2]（普通車は 40km/h くらいまでしか出ない） */
 const GRASS_DRAG_BASE = 1.0;
 const GRASS_DRAG_PER_SPEED = 0.33;
+/**
+ * 壁や他の車とこすれたときの摩擦の係数。ぶつかって押し戻された速さ（めり込む向きの速さ）に掛けた分だけ、
+ * 前へ進む速さを失う。壁に押し付けて曲がる（壁走り）と、押し付けている間ずっと減速する
+ */
+const CONTACT_FRICTION = 0.8;
+/** 押し戻された速さがこれ [m/s] 以下なら、触れていないとみなす（物理エンジンの誤差） */
+const CONTACT_DEADZONE = 0.05;
 /** 内側のタイヤを側溝に落としている間（溝落とし）、横に滑らずに曲がれる力がこの割合だけ増える */
 const GUTTER_GRIP = 0.4;
 
@@ -91,6 +98,8 @@ export class Car {
   airborne = false;
   /** 直前のステップで剛体に指示した水平速度（衝突の強さを測るため） */
   private commanded = { x: 0, z: 0 };
+  /** bump で足した速度（接触の摩擦の計算から除く） */
+  private pushed = { x: 0, z: 0 };
   /** ぶつけられて体勢を崩している残りの時間 [s]、その長さ、その間に足す向きの変わる速さ [rad/s] */
   private upset = { time: 0, length: 1, yawRate: 0 };
   /** コース上の距離（立体交差・往復のコースで、どちらの道にいるか）。分からなければ null */
@@ -140,7 +149,14 @@ export class Car {
     this.steerAngle = 0;
     this.airborne = false;
     this.commanded = { x: 0, z: 0 };
+    this.pushed = { x: 0, z: 0 };
     this.upset.time = 0;
+  }
+
+  /** 水平の速度を直接決める（テストで走っている状態から始めるため。衝突とはみなさない） */
+  setVelocity(x: number, z: number): void {
+    this.body.setLinvel({ x, y: this.body.linvel().y, z }, true);
+    this.commanded = { x, z };
   }
 
   /**
@@ -150,6 +166,7 @@ export class Car {
   bump(push: { x: number; z: number }, yawRate: number, time = 0.8): void {
     const v = this.body.linvel();
     this.body.setLinvel({ x: v.x + push.x, y: v.y, z: v.z + push.z }, true);
+    this.pushed = { x: this.pushed.x + push.x, z: this.pushed.z + push.z };
     this.upset = { time, length: time, yawRate };
   }
 
@@ -167,7 +184,12 @@ export class Car {
     const lz = -fx;
 
     const vel = this.body.linvel();
-    const forwardSpeed = vel.x * fx + vel.z * fz;
+    // 前のステップで指示した速度から、物理エンジンが押し戻した分 = 壁や車に当たっている強さ
+    const contact = Math.hypot(this.commanded.x + this.pushed.x - vel.x, this.commanded.z + this.pushed.z - vel.z);
+    this.pushed = { x: 0, z: 0 };
+    let forwardSpeed = vel.x * fx + vel.z * fz;
+    // こすれている間は摩擦で進む速さを失う
+    if (!this.airborne && contact > CONTACT_DEADZONE) forwardSpeed = Math.sign(forwardSpeed) * Math.max(0, Math.abs(forwardSpeed) - CONTACT_FRICTION * contact);
     const lateralSpeed = vel.x * lx + vel.z * lz;
 
     if (this.airborne) {

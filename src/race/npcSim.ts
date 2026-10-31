@@ -76,7 +76,7 @@ export interface SimRacer {
 
 /**
  * 2台のバトル。ライバル役（a）はプレイヤー役（b）を狙う（rough があれば）。chase [m] を書かなければ横に並んでスタートする。
- * ラフプレーで当てた回数と、それぞれのタイム・道路からはみ出した最大の距離・落ちたかを返す
+ * ラフプレーで当てた回数、プレイヤー役（b）がインを閉めていた時間と、それぞれのタイム・道路からはみ出した最大の距離・落ちたかを返す
  */
 export function simulateBattle(def: MapDefinition, a: SimRacer, b: SimRacer, seconds = 240, chase = 0) {
   if (!rapier) throw new Error('initNpcSim() を先に呼ぶ');
@@ -95,6 +95,7 @@ export function simulateBattle(def: MapDefinition, a: SimRacer, b: SimRacer, sec
     return { car, driver, timer: new TimeAttack(course, 1), maxOffset: 0, fell: false };
   });
   let attackSteps = 0;
+  let defendSteps = 0;
   let hits = 0;
   for (let step = 0; step < 60 * seconds; step++) {
     const snaps = racers.map((r) => r.car.snapshot());
@@ -105,6 +106,7 @@ export function simulateBattle(def: MapDefinition, a: SimRacer, b: SimRacer, sec
       r.car.applyInput(input, DT);
     });
     if (racers[0].driver.attacking && !racers[0].fell) attackSteps++;
+    if (racers[1].driver.defending && !racers[1].fell) defendSteps++;
     const hit = racers[0].driver.takeHit();
     if (hit) {
       hits++;
@@ -121,5 +123,5 @@ export function simulateBattle(def: MapDefinition, a: SimRacer, b: SimRacer, sec
     });
     if (racers.every((r) => r.timer.phase === 'finished' || r.fell)) break;
   }
-  return { hits, attackSeconds: attackSteps * DT, racers };
+  return { hits, attackSeconds: attackSteps * DT, defendSeconds: defendSteps * DT, racers };
 }
