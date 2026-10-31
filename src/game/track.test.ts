@@ -20,7 +20,7 @@ function driveAlong(track: Track, from: number, to: number) {
   for (let s = from; s < to; s += 0.25) {
     const p = course.pointAt(s);
     car.reset({ x: p.x, z: p.z, yaw: p.yaw, s: car.courseS ?? s });
-    car.body.setLinvel({ x: Math.sin(p.yaw) * 15, y: 0, z: Math.cos(p.yaw) * 15 }, true);
+    car.setVelocity(Math.sin(p.yaw) * 15, Math.cos(p.yaw) * 15);
     car.applyInput({ throttle: 0.3, brake: 0, steer: 0 }, 1 / 60);
     track.physics.world.timestep = 1 / 60;
     track.physics.world.step();
@@ -111,7 +111,7 @@ describe('Car in a gutter', () => {
       car.gutter = () => hooked;
       let yawRate = 0;
       for (let i = 0; i < 60; i++) {
-        car.body.setLinvel({ x: Math.sin(car.snapshot().yaw) * 20, y: 0, z: Math.cos(car.snapshot().yaw) * 20 }, true);
+        car.setVelocity(Math.sin(car.snapshot().yaw) * 20, Math.cos(car.snapshot().yaw) * 20);
         car.applyInput({ throttle: 0.5, brake: 0, steer: 1 }, 1 / 60);
         yawRate = car.body.angvel().y;
         track.physics.world.timestep = 1 / 60;

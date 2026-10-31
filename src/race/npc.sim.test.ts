@@ -5,7 +5,7 @@ import { parseMap } from '../map/tilemap';
 import { DEFAULT_VEHICLE_PARAMS, VEHICLE_PRESETS } from '../sim/vehicle';
 import { buildCourse } from './course';
 import { NPC_LEVELS } from './npcDriver';
-import { initNpcSim, simulateNpcRace } from './npcSim';
+import { initNpcSim, simulateBattle, simulateNpcRace } from './npcSim';
 import { buildRacingLine, buildSpeedProfile, profileTime } from './racingLine';
 
 /**
@@ -48,6 +48,25 @@ describe('NPC race', () => {
       console.log(v.label, def.name, racers[0].timer.laps[0]?.toFixed(2), 'off', racers[0].maxOffset.toFixed(1));
       expect(racers[0].timer.phase).toBe('finished');
       expect(racers[0].maxOffset).toBeLessThan(3);
+    }
+  }, 60000);
+});
+
+describe('NPC defending', () => {
+  beforeAll(initNpcSim);
+
+  it('closes the inside of the corner when a car is right behind', () => {
+    const ae86 = VEHICLE_PRESETS.find((v) => v.id === 'ae86')!.params;
+    // a（伝説）が b（上級）の 10m 後ろから追う
+    const chase = (level: (typeof NPC_LEVELS)[number]) => simulateBattle(HAIRPIN_MAP, { level: NPC_LEVELS[4], params: ae86 }, { level, params: ae86 }, 300, 10);
+    const on = chase(NPC_LEVELS[2]);
+    const off = chase({ ...NPC_LEVELS[2], defend: false });
+    console.log('defend', on.defendSeconds.toFixed(1), 's', on.racers.map((r) => r.timer.laps[0]?.toFixed(2)), 'off', off.racers.map((r) => r.timer.laps[0]?.toFixed(2)));
+    expect(on.defendSeconds).toBeGreaterThan(3);
+    expect(off.defendSeconds).toBe(0);
+    for (const r of on.racers) {
+      expect(r.timer.phase).toBe('finished');
+      expect(r.maxOffset).toBeLessThan(3);
     }
   }, 60000);
 });

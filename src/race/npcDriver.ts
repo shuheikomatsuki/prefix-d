@@ -14,14 +14,16 @@ export interface NpcLevel {
   line: number;
   /** 最高速度の割合 */
   topSpeed: number;
+  /** 後ろから迫られたら、次のコーナーの内側を閉めて抜かせないようにするか */
+  defend?: boolean;
 }
 
 export const NPC_LEVELS: readonly NpcLevel[] = [
-  { id: 'easy', label: '初級', grip: 0.62, brake: 0.55, line: 0.3, topSpeed: 0.8 },
-  { id: 'normal', label: '中級', grip: 0.76, brake: 0.7, line: 0.7, topSpeed: 0.9 },
-  { id: 'hard', label: '上級', grip: 0.88, brake: 0.82, line: 1, topSpeed: 0.97 },
-  { id: 'pro', label: '達人', grip: 0.96, brake: 0.92, line: 1, topSpeed: 1 },
-  { id: 'legend', label: '伝説', grip: 1, brake: 1, line: 1, topSpeed: 1 },
+  { id: 'easy', label: '初級', grip: 0.68, brake: 0.62, line: 0.3, topSpeed: 0.85 },
+  { id: 'normal', label: '中級', grip: 0.82, brake: 0.76, line: 0.7, topSpeed: 0.93 },
+  { id: 'hard', label: '上級', grip: 0.92, brake: 0.88, line: 1, topSpeed: 0.98, defend: true },
+  { id: 'pro', label: '達人', grip: 0.97, brake: 0.95, line: 1, topSpeed: 1, defend: true },
+  { id: 'legend', label: '伝説', grip: 1, brake: 1, line: 1, topSpeed: 1, defend: true },
 ];
 
 /** 他の車の位置と速度（よけるため） */
@@ -63,6 +65,9 @@ const ATTACK_LOOK = 40;
 const ATTACK_TURN = 0.35;
 /** 当たったとみなす、車どうしの前後・左右の距離 [m]（車の長さ・幅より少し大きめ） */
 const CONTACT_LENGTH = 4.6;
+/** インを閉めるのは、この先 [m] にコーナー（ATTACK_TURN 以上曲がる）があって、後ろの車がこの距離 [m] 以内にいるとき */
+const DEFEND_LOOK = 60;
+const DEFEND_GAP = 12;
 const CONTACT_WIDTH = 2.0;
 
 /** 車どうしが触れているか（a の向きで見た前後・左右の距離が、車の長さ・幅くらいより近い） */
@@ -151,6 +156,9 @@ export class NpcDriver {
     return h;
   }
 
+  /** いま後ろの車に対してインを閉めているか */
+  defending = false;
+
   /** いまラフプレーで狙っているか */
   get attacking(): boolean {
     return this.attackTime > 0;
@@ -161,6 +169,15 @@ export class NpcDriver {
     const course = this.line.course;
     const d = course.pointAt(this.clampS(s + ahead)).yaw - course.pointAt(this.clampS(s)).yaw;
     return Math.atan2(Math.sin(d), Math.cos(d));
+  }
+
+  /** コース上で、相手が自分より何 m 前にいるか（後ろなら負） */
+  private gapTo(o: Opponent, s: number): number {
+    const course = this.line.course;
+    const ov = Math.hypot(o.vx, o.vz);
+    const op = course.project(o.x, o.z, { s, dir: ov > 1 ? { x: o.vx / ov, z: o.vz / ov } : null });
+    const gap = op.s - s;
+    return course.closed ? ((gap % course.length) + course.length * 1.5) % course.length - course.length / 2 : gap;
   }
 
   private clampS(s: number): number {
@@ -276,6 +293,18 @@ export class NpcDriver {
       // 詰まる速さが大きいほど、ブレーキが間に合うよう早めに合わせる
       if (room < 3 || gap < 6 + (Math.max(0, closing) ** 2) / p.brakeDecel) follow = Math.min(follow, ov + Math.max(0, gap - 5) * 0.6);
     }
+    // 後ろから迫られたら、次のコーナーの内側へ寄せてインを閉める（抜くにはブレーキングか立ち上がりで勝つしかない）
+    this.defending = false;
+    if (this.level.defend && !aim && wantShift === 0) {
+      const turn = this.turnAhead(here.s, DEFEND_LOOK);
+      this.defending =
+        Math.abs(turn) > ATTACK_TURN &&
+        opponents.some((o) => {
+          const gap = this.gapTo(o, here.s);
+          return gap < -1 && gap > -DEFEND_GAP;
+        });
+      if (this.defending) wantShift = Math.sign(turn) * limit - this.line.offset[this.indexAt(here.s)] * this.level.line;
+    }
     this.sideShift += (wantShift - this.sideShift) * Math.min(1, dt * 1.5);
 
     // --- ハンドル（先読みした点へ向かう） ---
@@ -323,9 +352,10 @@ export class NpcDriver {
     let throttle = 0;
     let brake = 0;
     if (err > 0) {
-      // 速度を保つのに必要な分（空気抵抗に見合うアクセル）に、足りない分を上乗せする
+      // 速度を保つのに必要な分（空気抵抗に見合うアクセル）に、足りない分を上乗せする。
+      // 計画の速さは全開で加速したときの速さなので、少しでも足りなければすぐ全開にする（遅れると取り戻せない）
       const hold = (p.dragCoef * v * v) / Math.max(0.5, driveAccelAt(v, p));
-      throttle = Math.min(1, hold + err * 0.6);
+      throttle = Math.min(1, hold + err * 4);
     } else if (err < -0.4) {
       brake = Math.min(1, -err * 0.35);
     }
