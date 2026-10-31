@@ -185,3 +185,19 @@ describe('braking and cornering of the cars', () => {
     expect(d).toBeLessThan(45);
   });
 });
+
+describe('heavy cars in tight and fast corners', () => {
+  const lat = (id: string, kmh: number) => lateralAccelAt(kmh / 3.6, VEHICLE_PRESETS.find((c) => c.id === id)!.params);
+
+  it('lets the light FD3S and Evo IV out-corner the heavy R34 at low speed, but not at high speed', () => {
+    for (const light of ['fd3s', 'evo']) {
+      expect(lat(light, 50)).toBeGreaterThan(lat('r34', 50));
+      expect(lat(light, 160)).toBeLessThan(lat('r34', 160));
+    }
+  });
+
+  it('lets the Evo III out-corner the heavy R32 at low speed, but not at high speed', () => {
+    expect(lat('evo3', 50)).toBeGreaterThan(lat('gtr', 50));
+    expect(lat('evo3', 160)).toBeLessThan(lat('gtr', 160));
+  });
+});

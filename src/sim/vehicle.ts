@@ -49,6 +49,11 @@ export interface VehicleParams {
   maxLateralAccel: number;
   /** 横滑りの減衰率 [1/s]（大きいほどグリップが強い） */
   lateralGrip: number;
+  /**
+   * 高速で横加速度の上限が増える割合（省略時は HIGH_SPEED_GAIN）。
+   * 重い車は低速の横G（maxLateralAccel）を控えめにし、この割合を大きくして、高速では4WD・空力の安定感で取り戻す
+   */
+  highSpeedGain?: number;
 }
 
 export const DEFAULT_VEHICLE_PARAMS: Readonly<VehicleParams> = {
@@ -267,6 +272,8 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
       steerRate: 2.8,
       maxLateralAccel: 9.8,
       lateralGrip: 10,
+      // 軽くてタイトな峠に強いが、高速では接地感が増えない（GT-R に分がある）
+      highSpeedGain: 0,
     }),
   },
   {
@@ -279,7 +286,9 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
       brakeDecel: 10.9,
       wheelBase: 2.51,
       steerRate: 2.5,
-      maxLateralAccel: 9.2,
+      // 軽い4WD で、低速コーナーの脱出に強い（高速では GT-R に分がある）
+      maxLateralAccel: 9.4,
+      highSpeedGain: 0.04,
       lateralGrip: 11,
     }),
   },
@@ -293,7 +302,9 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
       brakeDecel: 10.9,
       wheelBase: 2.5,
       steerRate: 2.5,
-      maxLateralAccel: 9.4,
+      // 後輪の左右に力を配る AYC で、タイトなコーナーの低速域がとくに強い（高速では GT-R に分がある）
+      maxLateralAccel: 9.7,
+      highSpeedGain: 0.04,
       lateralGrip: 11.5,
     }),
   },
@@ -306,8 +317,11 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
       enginePower: 89, // 0-100km/h 5秒
       brakeDecel: 10,
       wheelBase: 2.62,
-      steerRate: 2.3,
-      maxLateralAccel: 9.2,
+      // 重い（約1.43t）うえ鉄のエンジンで前が重く、タイトな峠では向きが変わりにくい。高速は4WD で安定
+      steerRate: 2.1,
+      steerReturnRate: 3.2,
+      maxLateralAccel: 8.7,
+      highSpeedGain: 0.2,
       lateralGrip: 11,
     }),
   },
@@ -318,11 +332,14 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(285, {
       engineAccel: 9,
       enginePower: 93, // 0-100km/h 4.8秒
-      // ブレンボのブレーキと太いタイヤ（245）で、重いがブレーキ・横G は FD3S と並ぶ
-      brakeDecel: 10.9,
+      // 重い（約1.55t）ので、タイトな峠の低速コーナーとブレーキは FD3S・エボより不利。
+      // 太いタイヤ（245）・4WD・床下の空力で、高速コーナーでは横G がいちばん伸びる
+      brakeDecel: 10.7,
       wheelBase: 2.66,
-      steerRate: 2.3,
-      maxLateralAccel: 9.9,
+      steerRate: 2.1,
+      steerReturnRate: 3.2,
+      maxLateralAccel: 9.1,
+      highSpeedGain: 0.22,
       lateralGrip: 11.5,
     }),
   },
@@ -345,16 +362,16 @@ export interface VehicleStepResult extends VehicleState {
 /** この速度未満では「止まっている」とみなし、ブレーキ入力を後退として扱う */
 const STOP_THRESHOLD = 0.5;
 
-/** ダウンフォース: この速さ [m/s] から横加速度の上限が増え始め、DOWNFORCE_FULL で最大になる */
-const DOWNFORCE_FROM = 15;
-const DOWNFORCE_FULL = 40;
+/** この速さ [m/s] から横加速度の上限が増え始め、HIGH_SPEED_FULL で最大になる */
+const HIGH_SPEED_FROM = 15;
+const HIGH_SPEED_FULL = 40;
 /** 高速で増える横加速度の上限の割合（市販車の空力はわずかなので小さく） */
-const DOWNFORCE_GAIN = 0.08;
+const HIGH_SPEED_GAIN = 0.08;
 
 /** 速さ speed [m/s] での横加速度の上限。速いほど車が路面に押し付けられ、少し大きくなる */
 export function lateralAccelAt(speed: number, p: VehicleParams): number {
-  const t = Math.min(1, Math.max(0, (Math.abs(speed) - DOWNFORCE_FROM) / (DOWNFORCE_FULL - DOWNFORCE_FROM)));
-  return p.maxLateralAccel * (1 + DOWNFORCE_GAIN * t);
+  const t = Math.min(1, Math.max(0, (Math.abs(speed) - HIGH_SPEED_FROM) / (HIGH_SPEED_FULL - HIGH_SPEED_FROM)));
+  return p.maxLateralAccel * (1 + (p.highSpeedGain ?? HIGH_SPEED_GAIN) * t);
 }
 
 /** 速度に応じた舵角の上限。低速では最大舵角、高速では横加速度が上限を超えないよう絞る */
