@@ -109,11 +109,11 @@ export const COURSE_NOTES: Record<string, CourseNote> = {
   school: { text: '教習所のような練習コース。S字・クランク風の連続カーブと交差点', cars: ['kei', 'standard'] },
   'circuit-gp': { text: '1kmのメインストレートの先の低速ヘアピン、高速のS字、複合コーナー。退避帯と壁がある', cars: ['r34', 'gtr'] },
   'shutoko-loop-2': { text: '高架の3車線。1.3kmの湾岸線、540°の二重ループ、海を渡る吊り橋。両側は壁', cars: ['r34', 'gtr'] },
-  'technical-circuit': { text: 'クランク、ヘアピン、2つのシケイン。低速コーナーが続く', cars: ['ek9', 'fd3s'] },
+  'technical-circuit': { text: 'クランク、ヘアピン、2つのシケイン。低速コーナーが続く', cars: ['evo', 'fd3s'] },
   'pass-up': { text: '頂上まで150m上る。高速コーナー、S字、3つのヘアピン', cars: ['fd3s', 'evo'] },
   'pass-down': { text: '同じ峠を頂上から下る。スピードが乗るので早めのブレーキが大事', cars: ['fd3s', 'ae86'] },
   'pass-over-r': { text: '100mあまり上って峠を越え、反対側へ下る。頂上は見通しのよい高速の左右', cars: ['fd3s', 'evo'] },
-  uturn: { text: '谷沿いに上り、頂上のヘアピンで折り返して横を並んで下る', cars: ['fd3s', 'ek9'] },
+  uturn: { text: '谷沿いに上り、頂上のヘアピンで折り返して横を並んで下る', cars: ['fd3s', 'evo'] },
   hairpin: { text: '斜面をつづら折りで160m上る。180°のヘアピンが12個続く', cars: ['fd3s', 'evo'] },
   'hairpin-down': { text: 'つづら折りを下る。ヘアピンの内側を突っ切って段差から飛び降りる近道がある', cars: ['fd3s', 'ae86'] },
   'steep-up': { text: '平均17%の急坂。パワーのない車は伸びなくなる', cars: ['evo', 'fd3s'] },
@@ -126,11 +126,11 @@ export const COURSE_NOTES: Record<string, CourseNote> = {
   'valley-down': { text: '橋とトンネルの峠を下る。トンネルの出口の先のコーナーに注意', cars: ['fd3s', 'evo'] },
   'akina-down': {
     text: '秋名のダウンヒル。長いストレート、スケートセンター前の直線、5連続ヘアピン。ヘアピンの内側の側溝にタイヤを落とせば溝落とし',
-    cars: ['fd3s', 'ek9'],
+    cars: ['fd3s', 'evo'],
   },
   happogahara: {
     text: '狭い古い道、荒れた広い道、谷に架かる橋、ループ橋とトンネルのヒルクライム。頂上の広場でUターンして戻る',
-    cars: ['fd3s', 'ek9'],
+    cars: ['fd3s', 'evo'],
   },
 };
 

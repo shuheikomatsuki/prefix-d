@@ -200,12 +200,13 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(215, {
       engineAccel: 5.5,
       enginePower: 69, // 0-100km/h 7秒
-      brakeDecel: 10.9,
+      // タイヤが EK9 よりさらに細い（195・14インチ）
+      brakeDecel: 10.5,
       wheelBase: 2.45,
       maxSteerAngle: 0.62,
       steerRate: 2.9,
       steerReturnRate: 3.8,
-      maxLateralAccel: 10.1,
+      maxLateralAccel: 9.2,
       lateralGrip: 10.5,
     }),
   },
@@ -216,12 +217,13 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(225, {
       engineAccel: 6,
       enginePower: 73, // 0-100km/h 6.5秒
-      brakeDecel: 11.3,
+      // タイヤが細い（195・15インチ）ので、ブレーキと横G は上位の車より控えめ
+      brakeDecel: 10.7,
       wheelBase: 2.5,
       maxSteerAngle: 0.62,
       steerRate: 2.9,
       steerReturnRate: 3.8,
-      maxLateralAccel: 10.1,
+      maxLateralAccel: 9.4,
       lateralGrip: 11,
     }),
   },
@@ -316,10 +318,11 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     params: car(285, {
       engineAccel: 9,
       enginePower: 93, // 0-100km/h 4.8秒
-      brakeDecel: 10.5,
+      // ブレンボのブレーキと太いタイヤ（245）で、重いがブレーキ・横G は FD3S と並ぶ
+      brakeDecel: 10.9,
       wheelBase: 2.66,
       steerRate: 2.3,
-      maxLateralAccel: 9.4,
+      maxLateralAccel: 9.9,
       lateralGrip: 11.5,
     }),
   },
