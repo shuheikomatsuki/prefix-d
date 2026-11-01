@@ -34,7 +34,8 @@ describe('course profile for the menu', () => {
   it('builds both Irohazaka roads with the real lengths, rise and curve counts', () => {
     const up = MAPS.find((m) => m.id === 'iroha-up')!;
     const down = MAPS.find((m) => m.id === 'iroha-down')!;
-    const curves = (m: typeof up) => m.road!.pieces.filter((p) => p.arc && Math.abs(p.arc.turn) >= 45).length;
+    // 番号の付いたカーブ（ヘアピンの間の見通しの悪い区間のゆるいカーブは数えない）
+    const curves = (m: typeof up) => m.road!.pieces.filter((p) => p.arc && !p.blind && Math.abs(p.arc.turn) >= 45).length;
     expect(curves(up)).toBe(20);
     expect(curves(down)).toBe(28);
     const pu = courseProfile(up);
