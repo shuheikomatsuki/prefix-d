@@ -24,7 +24,8 @@ describe('road cuts', () => {
         expect(Math.min(cuts.left[i], cuts.right[i])).toBe(0);
       }
       expect(blind).toBeGreaterThan(1500);
-      expect(cut / blind).toBeGreaterThan(0.8);
+      // 山側はどこでも崖（区間の端でならした所を除く）
+      expect(cut / blind).toBeGreaterThan(0.95);
     });
 
     it(`${map.id}: the rock face stays below the road above it`, () => {
@@ -43,7 +44,9 @@ describe('road cuts', () => {
             const lateral = (road.x[k] - road.x[i]) * lx + (road.z[k] - road.z[i]) * lz;
             if (Math.abs(along) < 20 && lateral > 0 && lateral < 55) above = Math.max(above, road.h[k]);
           }
-          expect(top).toBeLessThan(above + 1.5);
+          // 横に上の道路がない所は、決まった高さの崖
+          if (above === -Infinity) expect(a[i]).toBeLessThanOrEqual(6.01);
+          else expect(top).toBeLessThan(Math.max(above + 1.5, road.h[i] + 6.01));
         }
       }
     });

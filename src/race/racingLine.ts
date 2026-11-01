@@ -1,4 +1,4 @@
-import { type VehicleParams, driveAccelAt, lateralAccelAt } from '../sim/vehicle';
+import { type VehicleParams, brakeGripShare, driveAccelAt, lateralAccelAt } from '../sim/vehicle';
 import type { Course } from './course';
 
 /** レーシングラインの点の間隔 [m] */
@@ -150,7 +150,11 @@ export function buildSpeedProfile(line: RacingLine, p: VehicleParams, opts: Spee
   }
   const accelAt = (speed: number, i: number) =>
     Math.max(0.3, driveAccelAt(speed, p) - p.dragCoef * speed * speed - GRAVITY * grade[i]);
-  const brakeAt = (speed: number, i: number) => Math.max(1, p.brakeDecel * opts.brake + p.dragCoef * speed * speed + GRAVITY * grade[i]);
+  // カーブの途中では、曲がるのに使っているグリップの分だけブレーキが弱くなる（摩擦円）
+  const brakeAt = (speed: number, i: number) => {
+    const corner = (speed * speed * Math.abs(curvature[i])) / (lateralAccelAt(speed, p) * opts.grip);
+    return Math.max(1, p.brakeDecel * opts.brake * brakeGripShare(corner) + p.dragCoef * speed * speed + GRAVITY * grade[i]);
+  };
 
   // 周回コースは継ぎ目をまたぐので2周分まわす
   const passes = closed ? 2 : 1;

@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { BARRIER_HEIGHT, type MapObstacles, tileHash } from '../map/obstacles';
 import {
   FLAG_BRIDGE,
+  FLAG_BLIND,
   FLAG_GUTTER,
   FLAG_NEW,
   FLAG_OLD,
@@ -13,6 +14,7 @@ import {
   type RoadModel,
   bumpHeight,
 } from '../map/road';
+import { CUT_FOOT, CUT_TOP, type RoadCuts, buildRoadCuts, cutAt } from '../map/roadCuts';
 import { guardrailAt, makeWallBlocked, wallGap, walledAt } from '../map/roadObstacles';
 import type { RoadGround } from '../map/roadTerrain';
 import { COLORS, mergeMixed, terrainGeometry } from './mapMesh';
@@ -354,6 +356,8 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
   }
   if (walls.length) add(geometry(walls), new THREE.MeshLambertMaterial({ color: circuit ? COLORS.guardrail : COLORS.concrete, side: THREE.DoubleSide }));
   group.add(buildGuardrails(road, gap, blocked, lift));
+  // --- 見通しの悪い区間の山側の岩の崖 ---
+  if (road.flags.some((f) => f & FLAG_BLIND)) group.add(buildRockFaces(road, buildRoadCuts(road)));
 
   // --- サーキットのカーブの縁石（赤と白） ---
   if (circuit) group.add(buildCurbs(road));
@@ -390,6 +394,48 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
   if (trunks.length) add(mergeMixed(trunks), new THREE.MeshLambertMaterial({ color: COLORS.trunk }));
   if (leaves.length) add(mergeMixed(leaves), new THREE.MeshLambertMaterial({ color: COLORS.leaves, flatShading: true }));
   return group;
+}
+
+/**
+ * 見通しの悪い区間の山側の、道路のすぐ脇から切り立つ岩の崖（山を切り開いた切り通しの断面）。
+ * 地面の格子は粗くて崖がなだらかに見えるので、道路に沿った面で描く。少しずつでこぼこさせて岩らしくする
+ */
+function buildRockFaces(road: RoadModel, cuts: RoadCuts): THREE.Mesh {
+  const out: number[] = [];
+  const colors: number[] = [];
+  const dark = new THREE.Color(0x6f655a);
+  const light = new THREE.Color(0x9b9182);
+  const c = new THREE.Color();
+  for (const side of [-1, 1]) {
+    for (const [i0, i1] of ranges(road, (i) => cutAt(cuts, i, side) > 0.3)) {
+      let prev: V[] | null = null;
+      for (const i of indices(road, i0, i1, 2)) {
+        const f = frame(road, i);
+        const h = cutAt(cuts, i, side);
+        const bump = (salt: number) => (tileHash(i >> 1, side + 2, salt) - 0.5) * 0.6;
+        // 断面: 道路の端のすぐ外の根元から、ほぼ垂直に立ち上がり、上のほうは少し寝て崖の上の端へ
+        const profile: [number, number][] = [
+          [f.w / 2 + CUT_FOOT, -0.4],
+          [f.w / 2 + CUT_FOOT + 0.3 + bump(31) * 0.5, Math.min(h, 2.2) + bump(32)],
+          [f.w / 2 + CUT_FOOT + 1.2 + bump(33), Math.min(h, h * 0.65 + 1) + bump(34)],
+          [f.w / 2 + CUT_TOP + 0.5, h + 0.2],
+        ];
+        const ring = profile.map(([u, v]): V => [f.x + f.lx * u * side, f.y + v, f.z + f.lz * u * side]);
+        if (prev) {
+          for (let k = 0; k + 1 < ring.length; k++) {
+            out.push(...prev[k], ...prev[k + 1], ...ring[k + 1], ...prev[k], ...ring[k + 1], ...ring[k]);
+            c.copy(dark).lerp(light, tileHash(i >> 1, k, 35 + side));
+            for (let v = 0; v < 6; v++) colors.push(c.r, c.g, c.b);
+          }
+        }
+        prev = ring;
+      }
+    }
+  }
+  const mesh = new THREE.Mesh(geometry(out, colors), new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide }));
+  mesh.receiveShadow = true;
+  mesh.castShadow = true;
+  return mesh;
 }
 
 /**

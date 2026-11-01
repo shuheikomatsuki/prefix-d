@@ -6,6 +6,7 @@ import {
   NEUTRAL_INPUT,
   VEHICLE_PRESETS,
   accelTimeOf,
+  cornerGripShare,
   driveAccelAt,
   lateralAccelAt,
   steerLimitAt,
@@ -103,6 +104,33 @@ describe('stepVehicle', () => {
   it('damps lateral sliding', () => {
     const s = run({ ...REST, forwardSpeed: 10, lateralSpeed: 5 }, {}, 1);
     expect(Math.abs(s.lateralSpeed)).toBeLessThan(0.01);
+  });
+});
+
+describe('sharing the tyre grip between braking and cornering (friction circle)', () => {
+  it('leaves less grip for cornering the harder the brake is pressed, but some even at full brake (ABS)', () => {
+    expect(cornerGripShare(0)).toBe(1);
+    expect(cornerGripShare(0.5)).toBeCloseTo(Math.sqrt(0.75));
+    expect(cornerGripShare(1)).toBeGreaterThan(0.2);
+    expect(cornerGripShare(1)).toBeLessThan(0.5);
+    expect(cornerGripShare(0.3)).toBeGreaterThan(cornerGripShare(0.7));
+  });
+
+  it('turns much less with full brake and full steer than with full steer alone', () => {
+    const cruising: VehicleState = { forwardSpeed: 25, lateralSpeed: 0, steerAngle: 0 };
+    const coast = run(cruising, { steer: 1 }, 0.4);
+    const braking = run(cruising, { steer: 1, brake: 1 }, 0.4);
+    // 横加速度 = 速さ × ヨーレート
+    const latCoast = coast.forwardSpeed * coast.yawRate;
+    const latBraking = braking.forwardSpeed * braking.yawRate;
+    expect(latBraking).toBeLessThan(latCoast * 0.5);
+    // 減速と曲がりを合わせた加速度は、タイヤの限界（ブレーキの減速度）をあまり超えない
+    expect(Math.hypot(latBraking, P.brakeDecel)).toBeLessThan(P.brakeDecel * 1.1);
+  });
+
+  it('keeps full cornering grip at low speed where the steering angle is not limited by grip', () => {
+    const slow: VehicleState = { forwardSpeed: 3, lateralSpeed: 0, steerAngle: 0 };
+    expect(run(slow, { steer: 1, brake: 1 }, 0.1).steerAngle).toBeCloseTo(run(slow, { steer: 1 }, 0.1).steerAngle, 2);
   });
 });
 

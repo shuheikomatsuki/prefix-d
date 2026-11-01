@@ -10,17 +10,19 @@ const MIN_RISE = 3;
 const TOP_MARGIN = 0.4;
 /** 崖の高さの上限 [m] */
 const MAX_CUT = 25;
+/** 崖の高さの下限 [m]（横に上の道路がない所も、この高さの崖にする） */
+const MIN_CUT = 6;
 /** 崖の高さを道路に沿ってならす幅 [m]（区間の端では高さを 0 へ下げる） */
 const SMOOTH = 8;
 /** 崖の下の端（岩の壁）の、道路の端からの距離 [m] */
-export const CUT_FOOT = 1;
+export const CUT_FOOT = 0.5;
 /** 崖が上の端まで上がりきる、道路の端からの距離 [m] */
-export const CUT_TOP = 6;
+export const CUT_TOP = 4;
 
 /**
- * 見通しの悪い区間（FLAG_BLIND）の、道路の両側の岩の崖（山を切り開いた切り通し）の高さ [m]。
- * すぐ横を高い所で別の道路が通る側（つづら折りの一つ前・一つ後の区間）を山側とし、その道路の高さの少し下まで
- * 崖を立てる。left / right は道路の点ごとの高さで、崖のない所は 0
+ * 見通しの悪い区間（FLAG_BLIND）の、山側の岩の崖（山を切り開いた切り通し）の高さ [m]。
+ * 山側は区間の cut で決め（書いていなければ、すぐ横を高い所で別の道路が通る側）、崖はすぐ横の上の道路の高さの
+ * 少し下まで立てる（上の道路がなければ MIN_CUT）。left / right は道路の点ごとの高さで、崖のない所は 0
  */
 export interface RoadCuts {
   left: Float32Array;
@@ -33,6 +35,14 @@ export function buildRoadCuts(road: RoadModel): RoadCuts {
   const grid = new PointGrid(road.x, road.z);
   const near: number[] = [];
   const apart = Math.round(60 / road.step);
+  // 道路の点ごとの、区間で決めた山側の向き（0 は決めていない）
+  const declared = new Int8Array(n);
+  for (let pi = 0; pi < road.spec.pieces.length; pi++) {
+    const side = road.spec.pieces[pi].cut ?? 0;
+    if (!side) continue;
+    const i1 = Math.min(n, Math.round(road.pieceStart[pi + 1] / road.step));
+    for (let i = Math.round(road.pieceStart[pi] / road.step); i < i1; i++) declared[i] = side;
+  }
   const usable = (i: number) => (road.flags[i] & FLAG_BLIND) !== 0 && (road.flags[i] & (FLAG_BRIDGE | FLAG_TUNNEL)) === 0;
   for (let i = 0; i < n; i++) {
     if (!usable(i)) continue;
@@ -51,9 +61,13 @@ export function buildRoadCuts(road: RoadModel): RoadCuts {
       const lateral = dx * fz - dz * fx;
       if (Math.abs(lateral) > SEARCH) continue;
       const rise = road.h[k] - road.h[i];
-      if (rise < MIN_RISE) continue;
+      if (rise < MIN_RISE || (declared[i] && Math.sign(lateral) !== declared[i])) continue;
       const side = lateral > 0 ? raw.left : raw.right;
       side[i] = Math.max(side[i], Math.min(MAX_CUT, rise - TOP_MARGIN));
+    }
+    if (declared[i]) {
+      const side = declared[i] > 0 ? raw.left : raw.right;
+      side[i] = Math.max(side[i], MIN_CUT);
     }
   }
   // 道路に沿ってならす（崖の高さが急に変わらないよう、前後の平均。区間の外は 0 として平均する）
