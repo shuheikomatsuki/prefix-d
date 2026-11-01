@@ -1,6 +1,6 @@
 import { SoundSystem } from './audio/sound';
 import { BGM_TRACKS, BgmPlayer } from './audio/bgm';
-import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
+import { GamepadInput, KeyboardInput, PAD_BUTTON, loadSmoothKeySteer, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Airborne } from './game/airborne';
 import { TIMES_OF_DAY, type TimeOfDay, WEATHERS, type Weather, defaultOpponentLights, loadEnvironment, paramsForWeather, saveEnvironment } from './game/environment';
@@ -8,6 +8,8 @@ import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
 import { clearPlayData } from './game/playData';
 import { NpcField, npcEntries, rankEntrants, velocityOf } from './game/npcRace';
+import { SectionClock, compareSections, sectionCount, sectionPaths, trackSections } from './race/sections';
+import type { SectionReport } from './ui/sectionReport';
 import { migrateSaveData } from './game/saveVersion';
 import { PLAYER_COLORS, RemoteCars, carStateOf, createLabel } from './game/remoteCars';
 import { MAPS, TITLE_MAPS } from './map/maps';
@@ -168,6 +170,8 @@ async function main() {
   const debugWhere = params.has('debug') ? document.body.appendChild(Object.assign(document.createElement('div'), { id: 'debug-where' })) : null;
   /** バトルのルール */
   let battleRule: BattleRule = 'side';
+  /** 横に並ぶバトルで、自分とライバルが区間の区切りを通った時刻（結果で、どこで離されたかを見せる） */
+  let sections: { me: SectionClock; them: SectionClock; paths: { x: number; z: number }[][] } | null = null;
   /** ライバルにラフプレーをさせるか（できるライバルだけ） */
   let battleRough = false;
   const roughOn = () => battleRough && !!battleRival().rough;
@@ -292,6 +296,8 @@ async function main() {
     const laps = suddenDeath ? 1 : level.def.race!.laps;
     // アクセルを踏むまでカウントダウンを始めない（自分のタイミングでスタートする）
     race = new TimeAttack(course, laps, true);
+    const count = sectionCount(course.length);
+    sections = mode === 'battle' && !suddenDeath ? { me: new SectionClock(course.length, count, laps), them: new SectionClock(course.length, count, laps), paths: sectionPaths(course, count) } : null;
     ghostRecorder = new GhostRecorder();
     ghostCourseS.best = ghostCourseS.rival = 0;
     // NPC 対戦ではゴーストを出さず、記録も残さない
@@ -363,6 +369,7 @@ async function main() {
   /** レースの表示と NPC を片付ける（車の位置はそのまま） */
   function clearRace() {
     race = null;
+    sections = null;
     talk.clear();
     suddenDeath = null;
     window.clearTimeout(nextRoundTimer);
@@ -401,6 +408,9 @@ async function main() {
       ...npcField.npcs.map((n) => ({ name: n.name, color: n.color, isPlayer: false, timer: n.timer, x: n.curr.x, z: n.curr.z })),
     ]);
   };
+
+  /** バトルの結果に添える区間ごとのタイム差 */
+  const sectionReport = (): SectionReport | null => (sections ? { gaps: compareSections(sections.me, sections.them), paths: sections.paths } : null);
 
   /** ゴールを知らせた NPC（レースが変わったら作り直す） */
   let finishSeen: { race: TimeAttack; timers: Set<TimeAttack> } | null = null;
@@ -462,7 +472,7 @@ async function main() {
             raceHud.setWarning({ wrongWay: false, offCourse: false });
             sound.beep(true);
             const show = () => {
-              raceHud.showStandings(standings(), r.totalLaps, raceMode === 'battle');
+              raceHud.showStandings(standings(), r.totalLaps, raceMode === 'battle', sectionReport());
               raceHud.showRankingButton(false);
             };
             if (raceMode === 'battle') talk.outcome(won ? 'win' : 'lose', show);
@@ -1049,6 +1059,7 @@ async function main() {
   let throttleHeld = false;
 
   const keyboard = new KeyboardInput();
+  keyboard.smoothSteer = loadSmoothKeySteer();
   keyboard.onAction('KeyO', () => onlinePanel.open());
   keyboard.onAction('KeyL', openRanking);
   keyboard.onAction('KeyR', resetCar);
@@ -1154,6 +1165,7 @@ async function main() {
       sound,
       bgm,
       touch,
+      keyboard,
       cycleCamera,
       toggleMute,
       toggleSteerMode: () => void toggleSteerMode(),
@@ -1293,6 +1305,11 @@ async function main() {
         const r = race;
         r.update(dt, { x: curr.x, z: curr.z, ...velocityOf(curr) });
         if (r.phase === 'racing') ghostRecorder.sample(r.time, curr);
+        const npc0 = npcField?.npcs[0];
+        if (sections && npc0) {
+          trackSections(sections.me, r, curr);
+          trackSections(sections.them, npc0.timer, npc0.curr);
+        }
         handleRaceEvents(r);
         announceNpcFinishes(r);
         judgeSuddenDeath();
@@ -1348,7 +1365,7 @@ async function main() {
           battle: battleInfo(),
         });
         // ゴールした後も、まだ走っている NPC がゴールするたびに順位表を更新する（先行後追いは別の結果）
-        if (rank && race.phase === 'finished' && !suddenDeath) raceHud.showStandings(rank.list, race.totalLaps, raceMode === 'battle');
+        if (rank && race.phase === 'finished' && !suddenDeath) raceHud.showStandings(rank.list, race.totalLaps, raceMode === 'battle', sectionReport());
         minimapRace = [
           ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
           ...(rivalPose ? [{ x: rivalPose.x, z: rivalPose.z, color: '#ffa040' }] : []),
