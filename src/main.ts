@@ -1406,7 +1406,7 @@ async function main() {
       view.followTarget(s.x, s.z, s.y);
       view.update(frameDt, cameraRig.camera);
       hud.update(s);
-      sound.update(s.forwardSpeed, input.throttle, s.lateralSpeed, input.brake > 0 && s.forwardSpeed > 0);
+      sound.update(s.forwardSpeed, input.throttle, s.lateralSpeed, input.brake > 0 && s.forwardSpeed > 0, s.understeer);
       view.fitToWindow(cameraRig.camera);
       view.render(cameraRig.camera);
       const showMirrors = mirrors.mode !== 'off' && !menu.showcase && !document.body.classList.contains('menu-open');

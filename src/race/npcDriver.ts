@@ -97,6 +97,8 @@ export function carsTouching(a: { x: number; z: number; yaw: number } | null, b:
 const STUCK_SECONDS = 1.5;
 /** 下がって抜け出す時間 [s] */
 const REVERSE_SECONDS = 1.2;
+/** 抜くために横へずれる速さの上限 [m/s]（速いまま反対側へ大きく振ると曲がりきれずに道の外へ出る） */
+const SHIFT_RATE = 3;
 
 /**
  * レース用の NPC の運転。レーシングラインを先読みしてハンドルを切り（pure pursuit）、
@@ -318,7 +320,8 @@ export class NpcDriver {
         });
       if (this.defending) wantShift = Math.sign(turn) * limit - this.line.offset[this.indexAt(here.s)] * this.level.line;
     }
-    this.sideShift += (wantShift - this.sideShift) * Math.min(1, dt * 1.5);
+    const shiftStep = (wantShift - this.sideShift) * Math.min(1, dt * 1.5);
+    this.sideShift += Math.sign(shiftStep) * Math.min(Math.abs(shiftStep), SHIFT_RATE * dt);
 
     // --- ハンドル（先読みした点へ向かう） ---
     const lookahead = Math.max(6, Math.abs(v) * 0.5 + 4);
@@ -351,13 +354,15 @@ export class NpcDriver {
     // 抜くためにラインから横へずれているときは、コーナーが内側ほどきつくなる分だけ速さを抑える
     if (Math.abs(this.sideShift) > 0.3) {
       let k = 0;
-      for (let d = 0; d <= Math.max(10, v * 1.5); d += this.line.step) k = Math.max(k, Math.abs(this.line.curvature[this.indexAt(here.s + d)]));
+      for (let d = 0; d <= Math.max(10, v * 1.5, (v * v) / p.brakeDecel); d += this.line.step) k = Math.max(k, Math.abs(this.line.curvature[this.indexAt(here.s + d)]));
       target *= Math.sqrt(Math.max(0.5, 1 - k * Math.abs(this.sideShift)));
     }
     target = aim ? aim.speed : Math.min(target, follow);
     // 向かう点へ曲がりきれない速さなら落とす（ラインから外れて膨らみ始めたとき）
     const bend = Math.abs(2 * Math.sin(alpha)) / Math.max(1, dist);
-    if (!aim && bend > 1e-3) target = Math.min(target, Math.sqrt(lateralAccelAt(v, p) / bend));
+    // 草地・ぶつけられた直後はグリップが落ちている（car.gripAngle が小さい）ので、そのぶん落とす
+    const gripLat = car.gripAngle !== undefined && Number.isFinite(car.gripAngle) && v > 1 ? (v * v * Math.tan(car.gripAngle)) / p.wheelBase : Infinity;
+    if (!aim && bend > 1e-3) target = Math.min(target, Math.sqrt(Math.min(lateralAccelAt(v, p), gripLat) / bend));
     // 大きく向きがずれているとき（スピン後など）はゆっくり戻る
     if (Math.abs(alpha) > 1.2) target = Math.min(target, 8);
     const err = target - v;
@@ -384,8 +389,12 @@ export class NpcDriver {
         brake = Math.max(brake, Math.min(1, need / p.brakeDecel));
       }
     }
-    // ブレーキ中は曲がれる舵角の上限が小さい（摩擦円）ので、その上限に対する割合でハンドルを切る
-    const steer = Math.max(-1, Math.min(1, steerAngle / steerLimitAt(Math.max(1, v), p, cornerGripShare(brake))));
+    // グリップの限界の角度より多くは切らない（切りすぎるとアンダーステアで曲がらなくなる）。
+    // ブレーキ中（摩擦円）・草地・ぶつけられた直後は、限界の角度が小さい
+    const dry = steerLimitAt(Math.max(1, v), p);
+    const lost = Math.min(1, (car.gripAngle ?? dry) / dry);
+    const grip = steerLimitAt(Math.max(1, v), p, cornerGripShare(brake) * lost);
+    const steer = Math.max(-grip, Math.min(grip, steerAngle)) / p.maxSteerAngle;
     this.lastSteer = steer;
     return { throttle, brake, steer };
   }

@@ -372,6 +372,10 @@ export interface VehicleState {
 export interface VehicleStepResult extends VehicleState {
   /** ヨーレート [rad/s]（上から見て反時計回り＝左旋回が正） */
   yawRate: number;
+  /** 前のタイヤがグリップの限界を超えて滑っている度合い（0..1。アンダーステア。タイヤの鳴きに使う） */
+  understeer: number;
+  /** ブレーキを踏んでいないときに、グリップの限界で曲がる舵角 [rad]（これより多く切るとアンダーステア） */
+  gripAngle: number;
 }
 
 /** この速度未満では「止まっている」とみなし、ブレーキ入力を後退として扱う */
@@ -379,6 +383,16 @@ const STOP_THRESHOLD = 0.5;
 
 /** ブレーキをいっぱいに踏んでも残る、曲がるのに使えるグリップの割合（ABS でタイヤがロックしない） */
 const BRAKE_GRIP_FLOOR = 0.35;
+
+/**
+ * ハンドルをグリップの限界の角度よりこれだけ [rad] 多く切ると、前のタイヤが完全に滑る（約 17°）。
+ * 実際のタイヤは限界の角度（数度）を超えると、切り足すほど横の力が少し落ち、路面をこすって減速する
+ */
+const UNDERSTEER_FULL = 0.3;
+/** 前のタイヤが完全に滑ったとき、曲がる力が落ちる割合 */
+const UNDERSTEER_GRIP_LOSS = 0.25;
+/** 前のタイヤが完全に滑ったとき、タイヤが路面をこする減速度（横加速度の上限に対する割合） */
+const UNDERSTEER_SCRUB = 0.35;
 
 /** この速さ [m/s] から横加速度の上限が増え始め、HIGH_SPEED_FULL で最大になる */
 const HIGH_SPEED_FROM = 15;
@@ -413,8 +427,8 @@ export function brakeGripShare(corner: number): number {
 }
 
 /**
- * 速度に応じた舵角の上限。低速では最大舵角、高速では横加速度が上限を超えないよう絞る。
- * share は曲がるのに使えるグリップの割合（ブレーキ中は cornerGripShare）
+ * タイヤがグリップの限界で曲がるときの舵角（これより多く切っても曲がる力は増えず、アンダーステアになる）。
+ * 低速では最大舵角まで曲がれる。share は曲がるのに使えるグリップの割合（ブレーキ中は cornerGripShare）
  */
 export function steerLimitAt(speed: number, p: VehicleParams, share = 1): number {
   const v2 = speed * speed;
@@ -431,6 +445,10 @@ function approach(current: number, target: number, maxDelta: number): number {
 function decelerate(speed: number, amount: number): number {
   if (speed > 0) return Math.max(0, speed - amount);
   return Math.min(0, speed + amount);
+}
+
+function smoothstep(t: number): number {
+  return t * t * (3 - 2 * t);
 }
 
 function clamp(x: number, min: number, max: number): number {
@@ -472,21 +490,28 @@ export function stepVehicle(
   const resistance = (throttle === 0 && brake === 0 ? p.coastDecel : 0) + p.dragCoef * v * v;
   v = decelerate(v, resistance * dt);
 
-  // --- ハンドル（ブレーキで減速に使ったグリップの分だけ、曲がれる力が減る） ---
+  // --- ハンドル（最大舵角まで切れる。曲がれるのはグリップの限界の角度 grip まで） ---
+  // ブレーキで減速に使ったグリップの分だけ、限界の角度が小さくなる（摩擦円）
   const braking = brake > 0 && movingForward ? brake : throttle > 0 && movingBackward ? throttle : 0;
-  const limit = steerLimitAt(v, p, cornerGripShare(braking));
-  const targetSteer = steer * limit;
-  // 高速では舵角の上限が小さいので、切る速さも合わせて落とす（キーボードでも急に曲がりすぎない）
-  const rateScale = Math.max(0.5, limit / p.maxSteerAngle);
+  const grip = steerLimitAt(v, p, cornerGripShare(braking));
+  const targetSteer = steer * p.maxSteerAngle;
+  // 高速では、切る速さを落とす（キーボードでも急に切りすぎない）
+  const rateScale = Math.max(0.5, steerLimitAt(v, p) / p.maxSteerAngle);
   const rate = (steer === 0 ? p.steerReturnRate : p.steerRate) * rateScale;
-  let steerAngle = approach(state.steerAngle, targetSteer, rate * dt);
-  steerAngle = clamp(steerAngle, -limit, limit);
+  const steerAngle = clamp(approach(state.steerAngle, targetSteer, rate * dt), -p.maxSteerAngle, p.maxSteerAngle);
+
+  // --- 限界を超えて切った分は、前のタイヤが滑る（アンダーステア） ---
+  // 曲がる力は限界から少し落ち、タイヤが路面をこすって減速する
+  const over = Math.max(0, Math.abs(steerAngle) - grip);
+  const understeer = smoothstep(Math.min(1, over / UNDERSTEER_FULL));
+  const turnAngle = over > 0 ? Math.sign(steerAngle) * Math.atan(Math.tan(grip) * (1 - UNDERSTEER_GRIP_LOSS * understeer)) : steerAngle;
+  if (understeer > 0) v = decelerate(v, UNDERSTEER_SCRUB * lateralAccelAt(v, p) * understeer * dt);
 
   // --- 旋回（自転車モデル） ---
-  const yawRate = (v * Math.tan(steerAngle)) / p.wheelBase;
+  const yawRate = (v * Math.tan(turnAngle)) / p.wheelBase;
 
   // --- 横滑り（タイヤのグリップで減衰） ---
   const lateralSpeed = state.lateralSpeed * Math.exp(-p.lateralGrip * dt);
 
-  return { forwardSpeed: v, lateralSpeed, steerAngle, yawRate };
+  return { forwardSpeed: v, lateralSpeed, steerAngle, yawRate, understeer, gripAngle: steerLimitAt(v, p) };
 }

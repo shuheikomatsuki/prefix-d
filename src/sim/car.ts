@@ -35,6 +35,10 @@ export interface CarSnapshot {
   steerAngle: number;
   /** タイヤの回転角 [rad] */
   wheelSpin: number;
+  /** 前のタイヤがグリップの限界を超えて滑っている度合い（0..1） */
+  understeer?: number;
+  /** 草地・ぶつけられた直後のグリップの落ち込みも含めた、ブレーキを踏んでいないときの限界の舵角 [rad]（NPC が切りすぎないように使う） */
+  gripAngle?: number;
   /** 描画用: 車体の前後の傾き [rad]（前が上がると正）。坂道のマップだけ */
   pitch?: number;
   /** 描画用: 車体の左右の傾き [rad]（左が上がると正） */
@@ -81,6 +85,8 @@ export class Car {
   readonly body: RAPIER.RigidBody;
   params: VehicleParams;
   private steerAngle = 0;
+  private understeer = 0;
+  private gripAngle = Infinity;
   private wheelSpin = 0;
   /** 坂道のマップなら、その位置の地形の勾配。物理は平らなまま、坂の重力だけを前後の速度に加える */
   slope: ((x: number, z: number) => { x: number; z: number }) | null = null;
@@ -147,6 +153,8 @@ export class Car {
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.steerAngle = 0;
+    this.understeer = 0;
+    this.gripAngle = Infinity;
     this.airborne = false;
     this.commanded = { x: 0, z: 0 };
     this.pushed = { x: 0, z: 0 };
@@ -234,6 +242,8 @@ export class Car {
     }
 
     this.steerAngle = next.steerAngle;
+    this.understeer = next.understeer;
+    this.gripAngle = next.gripAngle;
     this.wheelSpin += (next.forwardSpeed / CAR_DIMENSIONS.wheelRadius) * dt;
 
     this.commanded = {
@@ -274,6 +284,8 @@ export class Car {
       lateralSpeed: v.x * Math.cos(yaw) - v.z * Math.sin(yaw),
       steerAngle: this.steerAngle,
       wheelSpin: this.wheelSpin,
+      understeer: this.understeer,
+      gripAngle: this.gripAngle,
       ...(this.courseS !== null ? { courseS: this.courseS } : {}),
     };
   }
