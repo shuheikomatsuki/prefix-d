@@ -3,9 +3,9 @@ import { MAPS, TITLE_MAPS } from './maps';
 import { buildRoad } from './road';
 
 describe('TITLE_MAPS', () => {
-  it('練習用のコースとサーキットを含まない', () => {
+  it('練習用のコースと長いコースを含まない', () => {
     const ids = TITLE_MAPS.map((m) => m.id);
-    for (const id of ['town', 'school', 'circuit-gp']) expect(ids).not.toContain(id);
+    for (const id of ['town', 'school', 'iroha-up', 'iroha-down']) expect(ids).not.toContain(id);
     expect(ids).toContain('shutoko-loop-2');
     expect(ids).toContain('pass-down');
   });

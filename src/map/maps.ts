@@ -76,81 +76,6 @@ function wiggle(count: number, radius: number, turn: number, extra: Omit<RoadPie
 }
 
 /**
- * 周回のサーキット（約 3.5km）。1km のメインストレートの先の低速のヘアピン、退避帯の広い高速の S 字、
- * バックストレート、複合コーナー、半径 200m の高速コーナーと、速さの違うコーナーがそろう
- */
-const CIRCUIT_PIECES: RoadPiece[] = [
-  { straight: 700 },
-  // 1コーナー: 低速のヘアピン
-  { arc: { radius: 28, turn: -150 } },
-  { straight: 160 },
-  // 高速の S 字
-  { arc: { radius: 130, turn: 55 } },
-  { arc: { radius: 110, turn: -70 } },
-  { straight: 120 },
-  // 中速の左
-  { arc: { radius: 55, turn: 80 } },
-  // バックストレート
-  { straight: 420 },
-  // 複合の右（2つの頂点）
-  { arc: { radius: 40, turn: -80 } },
-  { straight: 40 },
-  { arc: { radius: 50, turn: -70 } },
-  { straight: 200 },
-  // 高速の左
-  { arc: { radius: 200, turn: 60 } },
-  { straight: 150 },
-  { arc: { radius: 70, turn: -90 } },
-  // 500m のストレートの先の右で、メインストレートに戻る
-];
-
-export const CIRCUIT_MAP = roadMap(
-  'circuit-gp',
-  'サーキット',
-  { scenery: 'circuit', width: 14, runoff: 8, start: 200, closed: true, pieces: closeLoop(ROAD_ORIGIN, CIRCUIT_PIECES, 80, -1) },
-  3,
-);
-
-/** 低速のコーナーが続く周回のテクニカルサーキット（約 2.4km）。クランク、ヘアピン、シケイン、180° 回り込むコーナー */
-const TECHNICAL_PIECES: RoadPiece[] = [
-  { straight: 260 },
-  { arc: { radius: 30, turn: 90 } },
-  { straight: 60 },
-  // クランク
-  { arc: { radius: 18, turn: -90 } },
-  { arc: { radius: 18, turn: 90 } },
-  { straight: 140 },
-  // ヘアピン
-  { arc: { radius: 16, turn: 175 } },
-  { straight: 90 },
-  // シケイン
-  { arc: { radius: 22, turn: -60 } },
-  { arc: { radius: 22, turn: 60 } },
-  { straight: 70 },
-  // 180° 回り込む右
-  { arc: { radius: 35, turn: -180 } },
-  { straight: 60 },
-  { arc: { radius: 25, turn: 110 } },
-  { straight: 150 },
-  { arc: { radius: 20, turn: -120 } },
-  { arc: { radius: 45, turn: 50 } },
-  { straight: 80 },
-  { arc: { radius: 25, turn: 100 } },
-  { straight: 90 },
-  // シケイン
-  { arc: { radius: 20, turn: -75 } },
-  { arc: { radius: 20, turn: 75 } },
-  { straight: 40 },
-];
-
-export const TECHNICAL_MAP = roadMap(
-  'technical-circuit',
-  'テクニカルサーキット',
-  { scenery: 'circuit', width: 12, runoff: 5, start: 150, closed: true, pieces: closeLoop(ROAD_ORIGIN, TECHNICAL_PIECES, 35, 1) },
-  2,
-);
-
-/**
  * 峠（約 2km・高低差 150m）。ふもとから頂上まで、半径の大きな高速コーナー、S 字、低速のヘアピンが
  * 混じる。下りは同じ道を頂上から
  */
@@ -346,45 +271,168 @@ export const UTURN_MAP = roadMap('uturn', '峠（Uターン）', {
   pieces: [...UTURN_OUT, { arc: { radius: 19, turn: 180 }, h: 85 }, ...alongside(UTURN_OUT, 38, 1)],
 });
 
-/** つづら折りの直線の長さと、その先のヘアピンの半径（ヘアピンは左右交互） */
-const HAIRPIN_LEGS: [number, number][] = [
-  [140, 13],
-  [125, 12],
-  [130, 14],
-  [115, 12],
-  [120, 13],
-  [105, 11],
-  [110, 12],
-  [95, 12],
-  [100, 13],
-  [85, 11],
-  [90, 12],
-  [80, 12],
-];
+/**
+ * ヘアピンが左右交互に続くつづら折り。legs は [ヘアピンの手前の直線の長さ, ヘアピンの半径] の並び。
+ * 最初のヘアピンが first の向き（1 = 左、-1 = 右）に回る。ヘアピンの前後はどれも直線
+ */
+function switchbacks(legs: readonly (readonly [number, number])[], first: 1 | -1): RoadPiece[] {
+  return legs.flatMap(([leg, radius], i): RoadPiece[] => [{ straight: leg }, { arc: { radius, turn: (i % 2 === 0 ? 180 : -180) * first } }]);
+}
 
-/** 斜面をつづら折りで上る（約 2.1km・高低差 160m）。ヘアピンが 12 個続く */
-const HAIRPIN_ROAD: RoadSpec = {
+/**
+ * 第一いろは坂（下り専用・約 6.5km・高低差 440m・28 カーブ）。中禅寺湖のそばの頂上から馬返へ下る。
+ * 実際の道の形のデータは使っておらず、カーブの数・長さ・高低差と、区間の並びを実際に合わせている:
+ *
+ * - 頂上の剣ヶ峰付近: 中速の左右が続く
+ * - 急な斜面を、ヘアピンが積み重なるように下る上側のつづら折り（ヘアピン 9 個）
+ * - 斜面をトラバースする中速区間の先で、下側のつづら折り（ヘアピン 8 個）
+ * - 馬返の手前: 間隔の開いたコーナーと直線
+ *
+ * 2 車線の一方通行で道幅は広い。ヘアピンの内側には段差のある近道の帯があり、
+ * 内側の内側を攻める「地元走り」ができる（src/map/roadShortcuts.ts）
+ */
+const IROHA_DOWN_ROAD: RoadSpec = {
+  scenery: 'touge',
+  width: 10,
+  start: 60,
+  startHeight: 440,
+  pieces: [
+    // 頂上の剣ヶ峰付近
+    { straight: 280, h: 436 },
+    { arc: { radius: 160, turn: -30 } },
+    { straight: 220 },
+    { arc: { radius: 45, turn: 80 } },
+    { straight: 150 },
+    { arc: { radius: 35, turn: -95 } },
+    { straight: 160 },
+    { arc: { radius: 50, turn: 90 } },
+    { straight: 120 },
+    { arc: { radius: 60, turn: -45 } },
+    { straight: 110, h: 395 },
+    // 上側のつづら折り
+    ...switchbacks(
+      [
+        [140, 16],
+        [125, 15],
+        [135, 17],
+        [115, 15],
+        [130, 16],
+        [110, 15],
+        [125, 17],
+        [105, 15],
+        [120, 16],
+      ],
+      -1,
+    ),
+    { straight: 150, h: 255 },
+    // 斜面をトラバースする中速区間
+    { arc: { radius: 70, turn: 90 } },
+    { straight: 220 },
+    { arc: { radius: 40, turn: 90 } },
+    { straight: 120, h: 215 },
+    // 下側のつづら折り
+    ...switchbacks(
+      [
+        [130, 15],
+        [120, 16],
+        [130, 15],
+        [110, 17],
+        [125, 15],
+        [105, 16],
+        [120, 15],
+        [110, 18],
+      ],
+      -1,
+    ),
+    { straight: 150, h: 95 },
+    // 馬返の手前
+    { arc: { radius: 70, turn: -70 } },
+    { straight: 200 },
+    { arc: { radius: 55, turn: 80 } },
+    { straight: 180 },
+    { arc: { radius: 25, turn: -150 } },
+    { straight: 220 },
+    { arc: { radius: 45, turn: 90 } },
+    { straight: 160 },
+    { arc: { radius: 35, turn: 60 } },
+    { straight: 160 },
+    { arc: { radius: 120, turn: -20 } },
+    { straight: 200, h: 0 },
+  ],
+};
+
+/**
+ * 第二いろは坂（上り専用・約 9.4km・高低差 440m・20 カーブ）。馬返から明智平を通って中禅寺湖のそばの頂上へ上る。
+ * 第一いろは坂と同じく、カーブの数・長さ・高低差と区間の並びを実際に合わせている:
+ *
+ * - 馬返から: 谷沿いの緩い勾配。高速の緩いカーブと長い直線の間に、中速のコーナーがはさまる
+ * - 斜面に取り付いて、間隔の広いヘアピンを積み重ねて上る（ヘアピン 12 個）
+ * - 明智平の手前の中速区間。明智平を過ぎるとトンネルを抜け、緩い上りで頂上へ
+ */
+const IROHA_UP_ROAD: RoadSpec = {
   scenery: 'touge',
   width: 10,
   start: 60,
   pieces: [
-    { straight: 80, h: 0 },
-    { arc: { radius: 70, turn: -35 } },
-    { straight: 50 },
-    ...HAIRPIN_LEGS.flatMap(([leg, radius], i): RoadPiece[] => [{ straight: leg }, { arc: { radius, turn: i % 2 === 0 ? -180 : 180 } }]),
-    { straight: 85 },
-    { arc: { radius: 60, turn: 40 } },
-    { straight: 80, h: 160 },
+    // 馬返から谷沿いの緩い上り
+    { straight: 300, h: 0 },
+    { arc: { radius: 300, turn: 20 } },
+    { straight: 450 },
+    { arc: { radius: 50, turn: -85 } },
+    { straight: 480 },
+    { arc: { radius: 400, turn: 18 } },
+    { straight: 400, h: 50 },
+    { arc: { radius: 60, turn: 90 } },
+    { straight: 350 },
+    { arc: { radius: 250, turn: -30 } },
+    { straight: 380 },
+    { arc: { radius: 45, turn: -100 } },
+    { straight: 360 },
+    { arc: { radius: 350, turn: 25 }, h: 120 },
+    { straight: 180 },
+    { arc: { radius: 55, turn: 85 } },
+    { straight: 150, h: 135 },
+    // 斜面のつづら折り
+    ...switchbacks(
+      [
+        [240, 20],
+        [225, 19],
+        [250, 21],
+        [220, 19],
+        [235, 20],
+        [215, 19],
+        [240, 21],
+        [210, 19],
+        [230, 20],
+        [220, 19],
+        [225, 21],
+        [210, 20],
+      ],
+      1,
+    ),
+    { straight: 160, h: 360 },
+    // 明智平の手前の中速区間
+    { arc: { radius: 50, turn: 90 } },
+    { straight: 200 },
+    { arc: { radius: 65, turn: -70 } },
+    { straight: 140 },
+    { arc: { radius: 40, turn: -110 } },
+    { straight: 200, h: 390 },
+    // 明智平を過ぎてトンネルへ
+    { arc: { radius: 200, turn: 30 } },
+    { straight: 120 },
+    { arc: { radius: 180, turn: -45 }, tunnel: true },
+    { straight: 300, tunnel: true, h: 420 },
+    { straight: 120 },
+    { arc: { radius: 250, turn: 25 } },
+    { straight: 250, h: 440 },
   ],
 };
 
-export const HAIRPIN_MAP = roadMap('hairpin', 'つづら折り（ヒルクライム）', HAIRPIN_ROAD);
+export const IROHA_UP_MAP = roadMap('iroha-up', 'いろは坂（ヒルクライム）', IROHA_UP_ROAD);
 
-/**
- * つづら折りを上から下る。ヘアピンの内側には段差のある近道の帯があり、
- * 内側の内側を攻める「地元走り」ができる（段差で少し宙に浮く。src/map/roadShortcuts.ts）
- */
-export const HAIRPIN_DOWN_MAP: MapDefinition = { ...roadMap('hairpin-down', 'つづら折り（ダウンヒル）', reverseRoad(HAIRPIN_ROAD, 60)), shortcuts: true };
+/** 第一いろは坂を下る。ヘアピンの内側の近道を使える */
+export const IROHA_DOWN_MAP: MapDefinition = { ...roadMap('iroha-down', 'いろは坂（ダウンヒル）', IROHA_DOWN_ROAD), shortcuts: true };
 
 /** 急な坂の峠（約 1.4km・高低差 230m）。きついヘアピンが 3 つある */
 const STEEP_ROAD: RoadSpec = {
@@ -796,15 +844,13 @@ export const AKINA_DOWN_MAP = roadMap('akina-down', '秋名（ダウンヒル）
 export const MAPS: readonly MapDefinition[] = [
   TOWN_MAP,
   SCHOOL_MAP,
-  CIRCUIT_MAP,
-  TECHNICAL_MAP,
   SHUTOKO_MAP,
   HILLCLIMB_MAP,
   DOWNHILL_MAP,
   PASS_OVER_MAP,
   UTURN_MAP,
-  HAIRPIN_MAP,
-  HAIRPIN_DOWN_MAP,
+  IROHA_UP_MAP,
+  IROHA_DOWN_MAP,
   STEEP_UP_MAP,
   STEEP_DOWN_MAP,
   LONG_MAP,
@@ -818,9 +864,9 @@ export const MAPS: readonly MapDefinition[] = [
 ];
 
 /**
- * タイトル画面の後ろに映すコース: 練習用（街・教習所）とサーキットを除いた、峠・首都高。
- * 起動が遅くならないよう、作るのに特に時間のかかる長いコース（超ロング・八方ヶ原）も除く
+ * タイトル画面の後ろに映すコース: 練習用（街・教習所）を除いた、峠・首都高。
+ * 起動が遅くならないよう、作るのに特に時間のかかる長いコース（超ロング・八方ヶ原・いろは坂）も除く
  */
 export const TITLE_MAPS: readonly MapDefinition[] = MAPS.filter(
-  (m) => ![TOWN_MAP, SCHOOL_MAP, CIRCUIT_MAP, TECHNICAL_MAP, MARATHON_MAP, HAPPOGAHARA_MAP].includes(m),
+  (m) => ![TOWN_MAP, SCHOOL_MAP, MARATHON_MAP, HAPPOGAHARA_MAP, IROHA_UP_MAP, IROHA_DOWN_MAP].includes(m),
 );

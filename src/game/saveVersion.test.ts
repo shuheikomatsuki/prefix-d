@@ -49,7 +49,19 @@ describe('save data version', () => {
       'car-game:beaten-rivals': '["takumi"]',
     });
     migrateSaveData(s);
-    expect([...s.map.keys()].sort()).toEqual(['car-game:beaten-rivals', 'car-game:name', 'car-game:save-version']);
+    expect([...s.map.keys()].sort()).toEqual(['car-game:name', 'car-game:save-version']);
+  });
+
+  it('drops the rival wins saved before wins needed the home course and terms', () => {
+    const s = memoryStorage({
+      'car-game:save-version': '2',
+      'car-game:beaten-rivals': '["takumi","iketani"]',
+      'car-game:time-attack:v2:pass-up-1a2b3c4:ae86': '{}',
+    });
+    migrateSaveData(s);
+    expect(s.getItem('car-game:beaten-rivals')).toBeNull();
+    expect(s.getItem('car-game:time-attack:v2:pass-up-1a2b3c4:ae86')).toBe('{}');
+    expect(savedVersion(s)).toBe(3);
   });
 
   it('leaves data from a newer game alone', () => {

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CIRCUIT_MAP, HAIRPIN_MAP, STEEP_DOWN_MAP, TECHNICAL_MAP } from '../map/maps';
+import { DOWNHILL_MAP, STEEP_DOWN_MAP, STRAIGHT_UP_MAP } from '../map/maps';
 import { TECHNICAL_MAP as TILE_TECHNICAL_MAP } from '../map/testMaps';
 import { parseMap } from '../map/tilemap';
 import { DEFAULT_VEHICLE_PARAMS, VEHICLE_PRESETS } from '../sim/vehicle';
@@ -30,20 +30,20 @@ describe('NPC race', () => {
   beforeAll(initNpcSim);
 
   it('ranks the levels: stronger NPCs are faster when driving alone', () => {
-    const times = NPC_LEVELS.map((level) => simulateNpcRace(TECHNICAL_MAP, [level]).racers[0].timer.laps[0]);
+    const times = NPC_LEVELS.map((level) => simulateNpcRace(DOWNHILL_MAP, [level]).racers[0].timer.laps[0]);
     console.log('alone', times.map((t) => t.toFixed(2)).join(' '));
     for (let i = 1; i < times.length; i++) expect(times[i]).toBeLessThan(times[i - 1]);
   }, 60000);
 
-  it('drives the RX-7 on the circuit', () => {
+  it('drives the RX-7 on the long straights', () => {
     const sport = VEHICLE_PRESETS.find((v) => v.id === 'fd3s')!.params;
-    const { racers } = simulateNpcRace(CIRCUIT_MAP, [NPC_LEVELS[3]], sport);
+    const { racers } = simulateNpcRace(STRAIGHT_UP_MAP, [NPC_LEVELS[3]], sport);
     console.log('fd3s pro', racers[0].timer.laps[0].toFixed(2), 'off', racers[0].maxOffset.toFixed(1));
     expect(racers[0].timer.phase).toBe('finished');
   }, 60000);
 
   it.each(VEHICLE_PRESETS.map((v) => [v.label, v] as const))('drives %s down the hairpins and the steep pass', (_, v) => {
-    for (const def of [HAIRPIN_MAP, STEEP_DOWN_MAP]) {
+    for (const def of [DOWNHILL_MAP, STEEP_DOWN_MAP]) {
       const { racers } = simulateNpcRace(def, [NPC_LEVELS[3]], v.params);
       console.log(v.label, def.name, racers[0].timer.laps[0]?.toFixed(2), 'off', racers[0].maxOffset.toFixed(1));
       expect(racers[0].timer.phase).toBe('finished');
@@ -58,7 +58,7 @@ describe('NPC defending', () => {
   it('closes the inside of the corner when a car is right behind', () => {
     const ae86 = VEHICLE_PRESETS.find((v) => v.id === 'ae86')!.params;
     // a（超上級）が b（上級）の 10m 後ろから追う
-    const chase = (level: (typeof NPC_LEVELS)[number]) => simulateBattle(HAIRPIN_MAP, { level: NPC_LEVELS[3], params: ae86 }, { level, params: ae86 }, 300, 10);
+    const chase = (level: (typeof NPC_LEVELS)[number]) => simulateBattle(DOWNHILL_MAP, { level: NPC_LEVELS[3], params: ae86 }, { level, params: ae86 }, 300, 10);
     const on = chase(NPC_LEVELS[2]);
     const off = chase({ ...NPC_LEVELS[2], defend: false });
     console.log('defend', on.defendSeconds.toFixed(1), 's', on.racers.map((r) => r.timer.laps[0]?.toFixed(2)), 'off', off.racers.map((r) => r.timer.laps[0]?.toFixed(2)));
