@@ -1,6 +1,6 @@
 import { SoundSystem } from './audio/sound';
 import { BGM_TRACKS, BgmPlayer } from './audio/bgm';
-import { GamepadInput, KeyboardInput, PAD_BUTTON, loadSmoothKeySteer, mergeInputs } from './core/input';
+import { GamepadInput, KeyboardInput, PAD_BUTTON, loadSmoothKeySteer, loadSpeedKeySteer, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Airborne } from './game/airborne';
 import { TIMES_OF_DAY, type TimeOfDay, WEATHERS, type Weather, defaultOpponentLights, loadEnvironment, paramsForWeather, saveEnvironment } from './game/environment';
@@ -35,6 +35,7 @@ import { attachBubble } from './render/bubble';
 import { lapsDone, rankOnline, standingsWindow } from './race/onlineRace';
 import { OnlineRacePanel } from './ui/onlineRacePanel';
 import { CameraRig } from './render/camera';
+import { SteerMeter } from './ui/steerMeter';
 import { REPLAY_VIEWS, ReplayCamera, type ReplayViewId } from './render/replayCamera';
 import { CarMesh, carStyle, driverEyeFor } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
@@ -43,7 +44,7 @@ import { nearestLit } from './game/headlights';
 import { Mirrors, loadMirrorMode } from './render/mirrors';
 import { CAR_DIMENSIONS, type CarSnapshot, type Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
-import { type DriverInput, NEUTRAL_INPUT, VEHICLE_PRESETS, type VehicleParams, topSpeedOf } from './sim/vehicle';
+import { type DriverInput, NEUTRAL_INPUT, VEHICLE_PRESETS, type VehicleParams, cornerGripShare, keySteerLimit, steerLimitAt, topSpeedOf } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { ConfirmDialog } from './ui/confirmDialog';
@@ -674,6 +675,7 @@ async function main() {
     view: ReplayViewId | null;
   } | null = null;
   const replayCam = new ReplayCamera();
+  const steerMeter = new SteerMeter(document.getElementById('hud')!);
   const replayPanel = new ReplayPanel({
     onClose: () => exitReplay(),
     onCamera: () => cycleReplayCamera(),
@@ -1311,6 +1313,7 @@ async function main() {
 
   const keyboard = new KeyboardInput();
   keyboard.smoothSteer = loadSmoothKeySteer();
+  keyboard.speedSteer = loadSpeedKeySteer();
   keyboard.onAction('KeyO', () => onlinePanel.open());
   keyboard.onAction('KeyL', openRanking);
   keyboard.onAction('KeyR', resetCar);
@@ -1419,6 +1422,7 @@ async function main() {
       bgm,
       touch,
       keyboard,
+      steerMeter,
       cycleCamera,
       toggleMute,
       toggleSteerMode: () => void toggleSteerMode(),
@@ -1495,7 +1499,10 @@ async function main() {
       if (replayView) return;
       const pad = gamepad.read();
       hud.setGamepadConnected(gamepad.isConnected);
-      input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
+      const keys = keyboard.read();
+      // キーのハンドルは、速さで決まるグリップの限界の少し先までにする（設定の「キーのハンドル」）
+      if (keyboard.speedSteer) keys.steer *= keySteerLimit(curr.forwardSpeed, level.car.params, keys.brake);
+      input = mergeInputs(mergeInputs(keys, pad), touch.read());
       horns.input.key = keyboard.isDown('KeyG');
       horns.update();
       // スタートの位置で待っている間は、アクセルを踏み直したらカウントダウンを始める
@@ -1649,6 +1656,12 @@ async function main() {
       view.followTarget(s.x, s.z, s.y);
       view.update(frameDt, cameraRig.camera);
       hud.update(s);
+      {
+        // ハンドルのメーター: いまの切れ角と、その速さ（とブレーキ）で曲がれる限界の切れ角
+        const params = level.car.params;
+        const braking = input.brake > 0 && s.forwardSpeed > 0.5 ? input.brake : 0;
+        steerMeter.update(s.steerAngle, steerLimitAt(Math.abs(s.forwardSpeed), params, cornerGripShare(braking)), params.maxSteerAngle, s.understeer ?? 0);
+      }
       sound.update(s.forwardSpeed, input.throttle, s.lateralSpeed, input.brake > 0 && s.forwardSpeed > 0, s.understeer);
       view.fitToWindow(cameraRig.camera);
       view.render(cameraRig.camera);

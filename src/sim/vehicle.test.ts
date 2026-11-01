@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_VEHICLE_PARAMS, KEY_STEER_OVER, keySteerLimit } from './vehicle';
 import {
   type DriverInput,
   type VehicleState,
@@ -258,5 +259,31 @@ describe('heavy cars in tight and fast corners', () => {
   it('lets the Evo III out-corner the heavy R32 at low speed, but not at high speed', () => {
     expect(lat('evo3', 50)).toBeGreaterThan(lat('gtr', 50));
     expect(lat('evo3', 160)).toBeLessThan(lat('gtr', 160));
+  });
+});
+
+describe('keySteerLimit（キーボードのハンドルを速さに合わせる）', () => {
+  const p = DEFAULT_VEHICLE_PARAMS;
+  it('低速では目いっぱい切れる', () => {
+    expect(keySteerLimit(3, p)).toBe(1);
+  });
+  it('高速では限界の少し先まで', () => {
+    const v = 25;
+    expect(keySteerLimit(v, p) * p.maxSteerAngle).toBeCloseTo(KEY_STEER_OVER * steerLimitAt(v, p));
+    expect(keySteerLimit(v, p)).toBeLessThan(0.1);
+  });
+  it('ブレーキ中は曲がれる分が減るので、切れる量も減る', () => {
+    expect(keySteerLimit(20, p, 1)).toBeLessThan(keySteerLimit(20, p));
+  });
+  it('押し続けても、アンダーステアはほんの少し', () => {
+    let state = { forwardSpeed: 25, lateralSpeed: 0, steerAngle: 0 };
+    let understeer = 0;
+    for (let i = 0; i < 120; i++) {
+      const r = stepVehicle(state, { throttle: 1, brake: 0, steer: keySteerLimit(state.forwardSpeed, p) }, p, 1 / 60);
+      state = { forwardSpeed: r.forwardSpeed, lateralSpeed: r.lateralSpeed, steerAngle: r.steerAngle };
+      understeer = Math.max(understeer, r.understeer);
+    }
+    expect(understeer).toBeGreaterThan(0);
+    expect(understeer).toBeLessThan(0.05);
   });
 });

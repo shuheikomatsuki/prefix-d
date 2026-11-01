@@ -436,6 +436,18 @@ export function steerLimitAt(speed: number, p: VehicleParams, share = 1): number
   return Math.min(p.maxSteerAngle, Math.atan((lateralAccelAt(speed, p) * share * p.wheelBase) / v2));
 }
 
+/** キーボードの「速さに合わせる」ハンドルで、押し続けたときにグリップの限界の角度の何倍まで切るか（少しだけ超える） */
+export const KEY_STEER_OVER = 1.2;
+
+/**
+ * キーボードのハンドルを押し続けたときに切れる量（最大舵角に対する割合 0..1）。
+ * キーは「押す・離す」しかないので、そのままでは高速で少し押しただけで限界を大きく超えてしまう。
+ * 速さ（とブレーキ）で決まるグリップの限界の角度の少し先までにしておく（低速では目いっぱい切れる）
+ */
+export function keySteerLimit(speed: number, p: VehicleParams, brake = 0): number {
+  return Math.min(1, (KEY_STEER_OVER * steerLimitAt(Math.abs(speed), p, cornerGripShare(brake))) / p.maxSteerAngle);
+}
+
 function approach(current: number, target: number, maxDelta: number): number {
   if (current < target) return Math.min(current + maxDelta, target);
   return Math.max(current - maxDelta, target);
