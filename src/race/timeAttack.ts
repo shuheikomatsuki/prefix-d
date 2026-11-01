@@ -85,6 +85,11 @@ export class TimeAttack {
     return this.wrongWay;
   }
 
+  /** コースを外れて近道をしている（コースに戻されるのを待っている）か */
+  get isOffCourse(): boolean {
+    return this.offCourse;
+  }
+
   /**
    * 順位を決めるための、スタートラインからコースに沿って進んだ距離 [m]（周回分を含む）。
    * スタート前（ラインの手前）は負になる

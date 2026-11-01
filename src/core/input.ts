@@ -6,28 +6,88 @@ const LEFT_KEYS = ['KeyA', 'ArrowLeft'];
 const RIGHT_KEYS = ['KeyD', 'ArrowRight'];
 const DRIVING_KEYS = new Set([...THROTTLE_KEYS, ...BRAKE_KEYS, ...LEFT_KEYS, ...RIGHT_KEYS]);
 
+/** なめらかなハンドルで、キーを押した瞬間に切る割合（軽く叩けば小さな修正になる） */
+export const KEY_STEER_START = 0.3;
+/** なめらかなハンドルで、押し続けて目いっぱい（1）に届くまでの時間 [s] */
+export const KEY_STEER_RAMP = 0.25;
+
+/**
+ * キーを held 秒押し続けたときのハンドルの量（0..1）。
+ * smooth なら押した瞬間は少しだけで、押し続けるほど深く切る。そうでなければ押した瞬間から目いっぱい
+ */
+export function keySteerAmount(held: number, smooth: boolean): number {
+  if (!smooth || held >= KEY_STEER_RAMP) return 1;
+  return Math.min(1, KEY_STEER_START + ((1 - KEY_STEER_START) * Math.max(0, held)) / KEY_STEER_RAMP);
+}
+
+const SMOOTH_STEER_KEY = 'car-game:key-steer-smooth';
+
+/** キーボードのハンドルをなめらかにするか（保存した設定。最初は true） */
+export function loadSmoothKeySteer(): boolean {
+  try {
+    return localStorage.getItem(SMOOTH_STEER_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function saveSmoothKeySteer(on: boolean): void {
+  try {
+    localStorage.setItem(SMOOTH_STEER_KEY, on ? 'on' : 'off');
+  } catch {
+    // 保存できなくても、このページを開いている間は効く
+  }
+}
+
 /** キーボードから運転入力を作る。単発のキー操作（リセット等）は onAction で受け取る */
 export class KeyboardInput {
   private readonly pressed = new Set<string>();
   private readonly actions = new Map<string, () => void>();
   /** false の間はキーを無視する（入力欄のある画面を開いているときなど） */
   private enabledValue = true;
+  /** 左・右に切り始めた時刻 [ms]（押していなければ null） */
+  private leftSince: number | null = null;
+  private rightSince: number | null = null;
+  /** 押した瞬間は少しだけ切り、押し続けるほど深く切る */
+  smoothSteer = true;
 
-  constructor(target: Window = window) {
+  constructor(
+    target: Window = window,
+    private readonly now: () => number = () => performance.now(),
+  ) {
     target.addEventListener('keydown', (e) => {
       if (!this.enabledValue) return;
       if (DRIVING_KEYS.has(e.code)) e.preventDefault();
       if (!e.repeat) this.actions.get(e.code)?.();
       this.pressed.add(e.code);
+      this.trackSteer();
     });
-    target.addEventListener('keyup', (e) => this.pressed.delete(e.code));
+    target.addEventListener('keyup', (e) => {
+      this.pressed.delete(e.code);
+      this.trackSteer();
+    });
     // ウィンドウ外にフォーカスが移ったらキーを離したことにする
-    target.addEventListener('blur', () => this.pressed.clear());
+    target.addEventListener('blur', () => this.release());
   }
 
   set enabled(on: boolean) {
     this.enabledValue = on;
-    if (!on) this.pressed.clear();
+    if (!on) this.release();
+  }
+
+  private release(): void {
+    this.pressed.clear();
+    this.trackSteer();
+  }
+
+  /** 左右のキーを押し始めた時刻を覚える（離したら忘れる） */
+  private trackSteer(): void {
+    const left = LEFT_KEYS.some((k) => this.pressed.has(k));
+    const right = RIGHT_KEYS.some((k) => this.pressed.has(k));
+    if (!left) this.leftSince = null;
+    else this.leftSince ??= this.now();
+    if (!right) this.rightSince = null;
+    else this.rightSince ??= this.now();
   }
 
   onAction(code: string, handler: () => void): void {
@@ -44,8 +104,12 @@ export class KeyboardInput {
     return {
       throttle: any(THROTTLE_KEYS) ? 1 : 0,
       brake: any(BRAKE_KEYS) ? 1 : 0,
-      steer: (any(LEFT_KEYS) ? 1 : 0) - (any(RIGHT_KEYS) ? 1 : 0),
+      steer: this.steerFrom(this.leftSince) - this.steerFrom(this.rightSince),
     };
+  }
+
+  private steerFrom(since: number | null): number {
+    return since === null ? 0 : keySteerAmount((this.now() - since) / 1000, this.smoothSteer);
   }
 }
 

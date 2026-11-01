@@ -1,6 +1,7 @@
 import type { Standing } from '../game/npcRace';
 import { formatTime } from '../race/timeAttack';
 import { escapeHtml, hex } from './html';
+import { type SectionReport, drawSectionMap, sectionReportHtml } from './sectionReport';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -242,7 +243,7 @@ export class RaceHud {
   /**
    * NPC 対戦の結果（順位表）。まだ走っている NPC がいる間は毎フレーム呼んでよい（変わったときだけ描き直す）
    */
-  showStandings(rows: readonly Standing[], totalLaps: number, battle = false): void {
+  showStandings(rows: readonly Standing[], totalLaps: number, battle = false, sections?: SectionReport | null): void {
     const me = rows.findIndex((r) => r.isPlayer);
     const winner = rows[0]?.total ?? null;
     const body = rows
@@ -257,12 +258,15 @@ export class RaceHud {
         return `<tr class="${r.isPlayer ? 'me' : ''}"><td>${i + 1}</td><td><span class="dot" style="background:${color}"></span>${escapeHtml(r.name)}</td><td>${time}</td></tr>`;
       })
       .join('');
-    const html = `<table class="standings">${body}</table>`;
     const rival = rows.find((r) => !r.isPlayer)?.name ?? '';
+    const html = `<table class="standings">${body}</table>${sections ? sectionReportHtml(sections.gaps, rival) : ''}`;
     this.resultTitle.textContent = battle ? (me === 0 ? `勝利！ ${rival} に勝った` : `敗北… ${rival} の勝ち`) : me === 0 ? '優勝！' : `ゴール！ ${me + 1}位`;
     if (html !== this.standingsHtml) {
       this.standingsHtml = html;
       this.resultBody.innerHTML = html;
+      this.result.classList.remove('hidden');
+      const map = this.resultBody.querySelector<HTMLCanvasElement>('.section-map');
+      if (map && sections) drawSectionMap(map, sections);
     }
     this.result.classList.remove('hidden');
   }

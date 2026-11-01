@@ -1,5 +1,6 @@
 import type { BgmPlayer } from '../audio/bgm';
 import type { SoundSystem } from '../audio/sound';
+import { type KeyboardInput, saveSmoothKeySteer } from '../core/input';
 import { MAX_EMOTE_LENGTH } from '../net/protocol';
 import type { CameraRig } from '../render/camera';
 import { MIRROR_MODES, type Mirrors, saveMirrorMode } from '../render/mirrors';
@@ -17,6 +18,7 @@ export interface SettingsContext {
   sound: SoundSystem;
   bgm: BgmPlayer;
   touch: TouchControls;
+  keyboard: KeyboardInput;
   cycleCamera: () => void;
   toggleMute: () => void;
   toggleSteerMode: () => void;
@@ -67,6 +69,20 @@ export function settingItems(c: SettingsContext): MenuItem[] {
       run: c.toggleSteerMode,
       visible: () => c.touch.isShown,
       detail: settingDetail('ハンドル（スマホ）', ['画面を左右になぞるか、スマホを傾けてハンドルを切る。']),
+    },
+    {
+      label: () => 'キーのハンドル',
+      value: () => (c.keyboard.smoothSteer ? 'なめらか' : 'すぐ全開'),
+      run: () => {
+        c.keyboard.smoothSteer = !c.keyboard.smoothSteer;
+        saveSmoothKeySteer(c.keyboard.smoothSteer);
+      },
+      visible: () => !c.touch.isShown,
+      detail: settingDetail('キーのハンドル（キーボード）', [
+        'なめらか: 軽く叩くと少しだけ切れ、押し続けるほど深く切れる。細かい修正がしやすい。',
+        'すぐ全開: 押した瞬間から目いっぱい切る（前の操作感）。',
+        'コントローラーやスマホの操作には関係しません。',
+      ]),
     },
     {
       label: () => '全画面',

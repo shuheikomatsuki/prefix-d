@@ -3834,3 +3834,48 @@ body.touch #net-status .ns-names {
 #confirm-input.hidden {
   display: none;
 }
+
+/* バトルの結果: 区間ごとのタイム差 */
+#race-result .sections {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+#race-result .section-map {
+  display: block;
+  width: 100%;
+  height: 120px;
+}
+
+#race-result .section-gaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+}
+
+#race-result .section-gaps li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 3.6em;
+  padding: 2px 4px;
+  border-radius: 6px;
+  border-bottom: 3px solid var(--c);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+}
+
+#race-result .section-gaps b {
+  color: var(--c);
+  font-size: 13px;
+}
+
+#race-result .section-line {
+  margin: 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
