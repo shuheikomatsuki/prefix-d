@@ -1,5 +1,5 @@
 import { courseIdOfKey } from '../map/courseRevision';
-import type { GhostData } from './ghost';
+import { type GhostData, type InputData, inputsMatch } from './ghost';
 
 /**
  * タイムアタックの自己ベスト。コース（courseKey: id ＋ 形の版）と車の組み合わせごとに、このブラウザの localStorage に保存する。
@@ -13,6 +13,8 @@ export interface RaceRecord {
   bestLap: number;
   /** 合計タイムが最速だった走りのゴースト */
   ghost: GhostData;
+  /** その走りの操作（リプレイで見せる。古い記録には無い） */
+  inputs?: InputData;
 }
 
 const PREFIX = 'car-game:time-attack:v1:';
@@ -60,7 +62,8 @@ export function parseRecord(raw: string): RaceRecord | null {
     if (!finite(o.total) || !Array.isArray(o.laps) || !o.laps.every(finite)) return null;
     const ghost = Array.isArray(o.ghost) && o.ghost.every(finite) && o.ghost.length % 3 === 0 ? o.ghost : [];
     const bestLap = finite(o.bestLap) ? o.bestLap : Math.min(...o.laps);
-    return { total: o.total, laps: o.laps, bestLap, ghost };
+    const inputs = Array.isArray(o.inputs) && o.inputs.every(finite) && inputsMatch(o.inputs, ghost.length) ? o.inputs : undefined;
+    return { total: o.total, laps: o.laps, bestLap, ghost, ...(inputs ? { inputs } : {}) };
   } catch {
     return null;
   }
@@ -72,7 +75,7 @@ export function parseRecord(raw: string): RaceRecord | null {
  */
 export function mergeRecord(
   best: RaceRecord | null,
-  run: { total: number; laps: number[]; ghost: GhostData },
+  run: { total: number; laps: number[]; ghost: GhostData; inputs?: InputData },
 ): { record: RaceRecord; newTotal: boolean; newLap: boolean } {
   const runBestLap = Math.min(...run.laps);
   const newTotal = !best || run.total < best.total;

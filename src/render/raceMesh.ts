@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Course } from '../race/course';
-import { CarMesh } from './carMesh';
+import { CarMesh, type CarStyle } from './carMesh';
 
 /** 坂道のマップの路面（ラインを坂に沿わせる） */
 export interface Surface {
@@ -73,8 +73,8 @@ function buildLine(width: number, at: { x: number; z: number; yaw: number }, ter
 }
 
 /** 自己ベストの走りを再生する、半透明の車 */
-export function createGhostMesh(color = 0x7fd4ff): CarMesh {
-  const mesh = new CarMesh(color);
+export function createGhostMesh(color = 0x7fd4ff, style?: CarStyle): CarMesh {
+  const mesh = new CarMesh(color, style);
   const materials = new Map<THREE.Material, THREE.Material>();
   mesh.root.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;

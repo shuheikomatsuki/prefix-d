@@ -3,7 +3,7 @@ import { MAPS } from '../map/maps';
 import type { MapDefinition } from '../map/tilemap';
 import { type SubmitResult, mergeBoards } from '../net/leaderboard';
 import { type LeaderboardClient, myEntryId, playerId, uploadedTotal } from '../net/leaderboardClient';
-import type { GhostData } from '../race/ghost';
+import type { GhostData, InputData } from '../race/ghost';
 import { loadRecord } from '../race/records';
 import { VEHICLE_PRESETS } from '../sim/vehicle';
 import { courseProfile } from '../ui/courseInfo';
@@ -15,6 +15,9 @@ export interface RankedGhost {
   name: string;
   total: number;
   ghost: GhostData;
+  /** 操作の記録（リプレイ用。古い記録では空） */
+  inputs: InputData;
+  laps: number[];
 }
 
 /** タイムアタックのランキング（自己ベストを送る・一覧を見る・上位の人のゴーストと対戦する） */
@@ -28,6 +31,8 @@ export class Ranking {
     handlers: {
       /** 一覧で選んだ人のゴーストと、そのコース・車でタイムアタックする */
       onRace: (course: string, car: string, ghost: RankedGhost) => void;
+      /** 一覧で選んだ人の走りのリプレイを見る */
+      onReplay: (course: string, car: string, ghost: RankedGhost) => void;
       onOpenChange: (open: boolean) => void;
     },
   ) {
@@ -54,11 +59,13 @@ export class Ranking {
           const mine = new Set(cars.map((id) => myEntryId(key, id)).filter((id): id is string => id !== null));
           return { entries: mergeBoards(boards), mine };
         },
-        onRace: async (course, entry) => {
+        onRace: async (course, entry, replay) => {
           const def = MAPS.find((m) => m.id === course);
           if (!def || !board) return;
-          const ghost = await board.ghost(courseKey(def), entry.car, entry.id);
-          handlers.onRace(course, entry.car, { name: entry.name, total: entry.total, ghost });
+          const run = await board.run(courseKey(def), entry.car, entry.id);
+          const ghost = { name: entry.name, total: entry.total, laps: entry.laps, ...run };
+          if (replay) handlers.onReplay(course, entry.car, ghost);
+          else handlers.onRace(course, entry.car, ghost);
         },
         onOpenChange: handlers.onOpenChange,
       },
@@ -76,7 +83,7 @@ export class Ranking {
     const key = courseKey(def);
     const record = loadRecord(key, car);
     if (!this.board || !name || !record || record.ghost.length === 0 || uploadedTotal(key, car) === record.total) return null;
-    return this.board.submit(key, car, { player: playerId(), name, total: record.total, laps: record.laps, ghost: record.ghost });
+    return this.board.submit(key, car, { player: playerId(), name, total: record.total, laps: record.laps, ghost: record.ghost, ...(record.inputs ? { inputs: record.inputs } : {}) });
   }
 
   /** 一覧を開く（いまのコースがレース用ならそのコース、でなければ最初のレース用のコース） */

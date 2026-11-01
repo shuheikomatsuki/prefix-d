@@ -23,8 +23,8 @@ export const ALL_CARS = 'all';
 export interface RankingPanelHandlers {
   /** そのランキングを読む（car が ALL_CARS ならすべての車。まだ送っていない自己ベストがあれば先に送る）。mine は自分の記録の id */
   load: (course: string, car: string) => Promise<{ entries: CarEntry[]; mine: ReadonlySet<string> }>;
-  /** 選んだ記録のゴーストと、その記録の車で走る */
-  onRace: (course: string, entry: CarEntry) => Promise<void>;
+  /** 選んだ記録のゴーストと、その記録の車で走る（replay なら、その走りのリプレイを見る） */
+  onRace: (course: string, entry: CarEntry, replay: boolean) => Promise<void>;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -81,9 +81,10 @@ export class RankingPanel {
       if (!button) return;
       const entry = this.entries[Number(button.dataset.index)];
       if (!entry) return;
+      const replay = button.dataset.action === 'replay';
       button.disabled = true;
-      this.status.textContent = `${entry.name} さんのゴーストを読み込んでいます…`;
-      this.handlers.onRace(this.course, entry).then(
+      this.status.textContent = `${entry.name} さんの${replay ? '走り' : 'ゴースト'}を読み込んでいます…`;
+      this.handlers.onRace(this.course, entry, replay).then(
         () => this.close(),
         (err: unknown) => {
           button.disabled = false;
@@ -167,7 +168,7 @@ export class RankingPanel {
       .map((e, i) => {
         const gap = i === 0 || top === undefined ? '' : `<span class="note">+${(e.total - top).toFixed(2)}</span>`;
         const date = new Date(e.date).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' });
-        return `<tr class="${mine.has(e.id) ? 'me' : ''}"><td>${i + 1}</td><td class="name">${escapeHtml(e.name)}</td><td class="car">${escapeHtml(this.carLabels.get(e.car) ?? e.car)}</td><td>${formatTime(e.total)} ${gap}</td><td class="note date">${date}</td><td><button type="button" data-index="${i}">対戦</button></td></tr>`;
+        return `<tr class="${mine.has(e.id) ? 'me' : ''}"><td>${i + 1}</td><td class="name">${escapeHtml(e.name)}</td><td class="car">${escapeHtml(this.carLabels.get(e.car) ?? e.car)}</td><td>${formatTime(e.total)} ${gap}</td><td class="note date">${date}</td><td class="actions"><button type="button" data-index="${i}" data-action="replay">リプレイ</button><button type="button" data-index="${i}">対戦</button></td></tr>`;
       })
       .join('');
     this.table.innerHTML = `${head}<tbody>${rows}</tbody>`;

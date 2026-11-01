@@ -23,6 +23,15 @@ describe('parseSubmission', () => {
     expect(parseSubmission({ ...sub(PLAYER_A, 90), ghost: [1, 2] })).toBeNull();
     expect(parseSubmission({ ...sub(PLAYER_A, 90), ghost: 'abc' })).toBeNull();
   });
+
+  it('keeps the inputs only when they match the ghost', () => {
+    const inputs = [0, 100, 0, 200, 0, -50, 0, 80, 150, 30];
+    expect(parseSubmission({ ...sub(PLAYER_A, 90), inputs })?.inputs).toEqual(inputs);
+    // 数が合わない・整数でない記録は、操作だけ捨てる（記録そのものは受け付ける）
+    expect(parseSubmission({ ...sub(PLAYER_A, 90), inputs: [1, 2, 3] })?.inputs).toBeUndefined();
+    expect(parseSubmission({ ...sub(PLAYER_A, 90), inputs: inputs.map((v) => v + 0.5) })?.inputs).toBeUndefined();
+    expect(parseSubmission({ ...sub(PLAYER_A, 90), inputs: 'x' })).not.toBeNull();
+  });
 });
 
 describe('applySubmission', () => {

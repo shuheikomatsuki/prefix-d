@@ -265,6 +265,9 @@ describe('records', () => {
     expect(parseRecord('nope')).toBeNull();
     expect(parseRecord('{"total":"x"}')).toBeNull();
     expect(parseRecord('{"total":90,"laps":[30,30,30],"ghost":[1,2]}')?.ghost).toEqual([]);
+    // 操作の記録は、ゴーストと数が合うときだけ読む
+    expect(parseRecord('{"total":90,"laps":[30,30,30],"ghost":[1,2,3],"inputs":[1,2,3,4,5]}')?.inputs).toEqual([1, 2, 3, 4, 5]);
+    expect(parseRecord('{"total":90,"laps":[30,30,30],"ghost":[1,2,3],"inputs":[1,2]}')?.inputs).toBeUndefined();
   });
 
   it('formats times', () => {

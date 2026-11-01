@@ -1,7 +1,9 @@
+import { INPUT_STRIDE, inputsMatch } from '../race/ghost';
+
 /**
  * タイムアタックのランキング（クライアントとサーバーで共有する）。
  * コースと車の組み合わせごとに1つのランキングがあり、1人につき一番速い記録だけを残す。
- * 記録にはゴーストも付けて送り、ランキングから選んだ人のゴーストと一緒に走れる。
+ * 記録にはゴーストと操作の記録も付けて送り、ランキングから選んだ人のゴーストと一緒に走ったり、リプレイを見たりできる。
  *
  * コースと車は、表示名ではなく変わらない id（MapDefinition.id・VehiclePreset.id）で区別する。
  * 表示名を変えてもランキングはそのまま残る。
@@ -15,6 +17,8 @@ export const STORED_ENTRIES = 50;
 export const MAX_ENTRY_NAME_LENGTH = 10;
 /** ゴーストの数値の上限（10Hz × [x, z, yaw] で 15 分ぶん） */
 export const MAX_GHOST_VALUES = 10 * 3 * 60 * 15;
+/** 操作の記録（ゴーストの1点ごとに INPUT_STRIDE 個）の数値の上限 */
+export const MAX_INPUT_VALUES = (MAX_GHOST_VALUES / 3) * INPUT_STRIDE;
 export const MAX_LAPS = 20;
 
 /** ランキングの1行（他の人にも見える情報） */
@@ -54,6 +58,14 @@ export interface Submission {
   total: number;
   laps: number[];
   ghost: number[];
+  /** 操作の記録（リプレイ用。ゴーストと数が合わなければ捨てる） */
+  inputs?: number[];
+}
+
+/** ランキングの人の走り（ゴーストと、あれば操作の記録） */
+export interface RunData {
+  ghost: number[];
+  inputs: number[];
 }
 
 export interface SubmitResult {
@@ -81,7 +93,11 @@ export function parseSubmission(body: unknown): Submission | null {
   if (!finite(o.total) || o.total <= 0 || o.total > 3600) return null;
   if (!Array.isArray(o.laps) || o.laps.length === 0 || o.laps.length > MAX_LAPS || !o.laps.every((t) => finite(t) && t > 0)) return null;
   if (!Array.isArray(o.ghost) || o.ghost.length > MAX_GHOST_VALUES || o.ghost.length % 3 !== 0 || !o.ghost.every(finite)) return null;
-  return { player: o.player, name, total: o.total, laps: o.laps, ghost: o.ghost };
+  const inputs =
+    Array.isArray(o.inputs) && o.inputs.length <= MAX_INPUT_VALUES && o.inputs.every((v) => Number.isInteger(v) && Math.abs(v) <= 10_000) && inputsMatch(o.inputs, o.ghost.length)
+      ? o.inputs
+      : undefined;
+  return { player: o.player, name, total: o.total, laps: o.laps, ghost: o.ghost, ...(inputs ? { inputs } : {}) };
 }
 
 export function publicEntry({ id, name, total, laps, date }: StoredEntry): LeaderboardEntry {
