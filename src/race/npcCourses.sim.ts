@@ -23,7 +23,8 @@ export function describeCourseRaces(part: number, parts: number): void {
           expect(r.maxOffset).toBeLessThan(3);
         }
       },
-      60000,
+      // いちばん長いいろは坂（ヒルクライム・9.4km）は CI で 80 秒あまりかかる
+      180000,
     );
   });
 }
