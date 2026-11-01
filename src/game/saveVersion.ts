@@ -8,7 +8,7 @@
  * ただしブラウザのデータはその人が書き換えられるので、ずるを確実に防ぐにはサーバーで持つ必要がある。
  */
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 const VERSION_KEY = 'car-game:save-version';
 
 type SaveStorage = Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'>;
@@ -24,6 +24,9 @@ const MIGRATIONS: readonly ((storage: SaveStorage) => void)[] = [
     const keys = Array.from({ length: storage.length }, (_, i) => storage.key(i) ?? '');
     for (const k of keys) if (old.some((p) => k.startsWith(p))) storage.removeItem(k);
   },
+  // 2 → 3: ライバルに勝った記録（WIN）を、得意コースと条件を満たした勝ちだけ数えるようにした。
+  // 前の記録は条件を満たしていたかわからないので消す
+  (storage) => storage.removeItem('car-game:beaten-rivals'),
 ];
 
 /** 保存されている版（記録がなければ 0） */

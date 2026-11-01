@@ -24,12 +24,25 @@ describe('course profile for the menu', () => {
     expect(p.heights[0]).toBeCloseTo(p.heights[p.heights.length - 1], 0);
   });
 
-  it('treats the town as a free roam map and the circuit as a loop', () => {
+  it('treats the town as a free roam map and the Shutoko as a loop', () => {
     expect(courseProfile(MAPS[0]).kind).toBe('free');
-    const circuit = courseProfile(MAPS.find((m) => m.id === 'circuit-gp')!);
-    expect(circuit.kind).toBe('loop');
-    expect(circuit.length).toBeGreaterThan(3000);
-    expect(circuit.maxGrade).toBeLessThan(1);
+    const shutoko = courseProfile(MAPS.find((m) => m.id === 'shutoko-loop-2')!);
+    expect(shutoko.kind).toBe('loop');
+    expect(shutoko.length).toBeGreaterThan(3000);
+  });
+
+  it('builds both Irohazaka roads with the real lengths, rise and curve counts', () => {
+    const up = MAPS.find((m) => m.id === 'iroha-up')!;
+    const down = MAPS.find((m) => m.id === 'iroha-down')!;
+    const curves = (m: typeof up) => m.road!.pieces.filter((p) => p.arc && Math.abs(p.arc.turn) >= 45).length;
+    expect(curves(up)).toBe(20);
+    expect(curves(down)).toBe(28);
+    const pu = courseProfile(up);
+    const pd = courseProfile(down);
+    expect(pu.length).toBeGreaterThan(9000);
+    expect(pd.length).toBeGreaterThan(6000);
+    expect(pu.heights[pu.heights.length - 1] - pu.heights[0]).toBeCloseTo(440, -1);
+    expect(pd.heights[0] - pd.heights[pd.heights.length - 1]).toBeCloseTo(440, -1);
   });
 
   it('fits the elevation graph into the box', () => {

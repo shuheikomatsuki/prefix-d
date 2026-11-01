@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { HAIRPIN_DOWN_MAP } from './maps';
+import { IROHA_DOWN_MAP } from './maps';
 import { buildRoad } from './road';
 import { findRoadShortcuts, roadShortcutHeight } from './roadShortcuts';
 import { insideShortcut, shortcutPoint, shortcutStep } from './shortcuts';
 
 describe('road shortcuts', () => {
-  const road = buildRoad(HAIRPIN_DOWN_MAP.road!);
+  const road = buildRoad(IROHA_DOWN_MAP.road!);
   const shortcuts = findRoadShortcuts(road);
 
   it('finds the inside of every hairpin', () => {
-    expect(shortcuts.length).toBe(12);
+    expect(shortcuts.length).toBe(17);
     for (const sc of shortcuts) {
       // 帯の奥（円弧の中心のさらに内側）は、行きと帰りの道路の間で、どちらの道路の上でもない
       const p = shortcutPoint(sc, 0, sc.wMax - 1);
@@ -38,12 +38,12 @@ describe('road shortcuts', () => {
       const end = roadShortcutHeight(road, shortcuts, nearLower.x, nearLower.z)!;
       expect(end - low).toBeGreaterThan(0.5 * shortcutStep(high - low));
       expect(end).toBeLessThan(high);
-      // 帯の上では、上の道路から下の道路へ向かって下り続ける
+      // 帯の上では、上の道路から下の道路へ向かって下り続ける（上の道路の縁のなめらかなつなぎで数 mm 揺れるのは許す）
       let prev = Infinity;
       for (let u = -sc.uEdge + 0.5; u <= sc.uEdge - 0.5; u += 1) {
         const p = shortcutPoint(sc, u, w);
         const h = roadShortcutHeight(road, shortcuts, p.x, p.z)!;
-        expect(h).toBeLessThanOrEqual(prev + 1e-3);
+        expect(h).toBeLessThanOrEqual(prev + 1e-2);
         prev = h;
       }
     }

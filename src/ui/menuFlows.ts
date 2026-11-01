@@ -320,7 +320,7 @@ export function createGameMenu(c: MenuContext): { menu: GameMenu; openChangeFlow
       label: '自由に走る',
       en: 'FREE RUN',
       note: '好きなマップを自由にドライブ',
-      detail: modeDetail('自由に走る', 'FREE RUN', ['街・峠・サーキット・首都高を、時間を気にせず走る。', 'オンラインの部屋に入れば、友だちと同じマップを走れます。']),
+      detail: modeDetail('自由に走る', 'FREE RUN', ['街・峠・首都高を、時間を気にせず走る。', 'オンラインの部屋に入れば、友だちと同じマップを走れます。']),
       begin: () => beginDraft(false),
       screens: () => [courseScreen(false), carScreen, envScreen],
       summary: () => `${draftMap().name} ／ ${draftCar().label} ／ ${envSummary()}`,

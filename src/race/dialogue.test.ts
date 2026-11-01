@@ -32,8 +32,8 @@ const line = (text: string) => [{ who: 'takumi', text }];
 describe('dialogueApplies', () => {
   it('はじめは得意なコースのときだけ', () => {
     expect(dialogueApplies({}, ctx)).toBe(true);
-    expect(dialogueApplies({}, { ...ctx, course: 'circuit-gp' })).toBe(false);
-    expect(dialogueApplies({ onlyHomeCourse: false }, { ...ctx, course: 'circuit-gp' })).toBe(true);
+    expect(dialogueApplies({}, { ...ctx, course: 'pass-up' })).toBe(false);
+    expect(dialogueApplies({ onlyHomeCourse: false }, { ...ctx, course: 'pass-up' })).toBe(true);
     expect(dialogueApplies(undefined, ctx)).toBe(false);
   });
 
