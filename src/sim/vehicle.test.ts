@@ -18,7 +18,7 @@ const DT = 1 / 60;
 const REST: VehicleState = { forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0 };
 
 function run(state: VehicleState, input: Partial<DriverInput>, seconds: number) {
-  let s = { ...state, yawRate: 0 };
+  let s = { ...state, yawRate: 0, understeer: 0, gripAngle: 0 };
   const full = { ...NEUTRAL_INPUT, ...input };
   for (let i = 0; i < Math.round(seconds / DT); i++) s = stepVehicle(s, full, P, DT);
   return s;
@@ -131,6 +131,37 @@ describe('sharing the tyre grip between braking and cornering (friction circle)'
   it('keeps full cornering grip at low speed where the steering angle is not limited by grip', () => {
     const slow: VehicleState = { forwardSpeed: 3, lateralSpeed: 0, steerAngle: 0 };
     expect(run(slow, { steer: 1, brake: 1 }, 0.1).steerAngle).toBeCloseTo(run(slow, { steer: 1 }, 0.1).steerAngle, 2);
+  });
+});
+
+describe('steering past the grip limit (understeer)', () => {
+  const cruising: VehicleState = { forwardSpeed: 25, lateralSpeed: 0, steerAngle: 0 };
+  const atLimit = steerLimitAt(25, P) / P.maxSteerAngle;
+
+  it('lets the wheel turn past the grip limit at high speed, and the front tyres slide', () => {
+    const s = run(cruising, { steer: 1 }, 1);
+    expect(s.steerAngle).toBeGreaterThan(steerLimitAt(s.forwardSpeed, P) * 3);
+    expect(s.understeer).toBe(1);
+  });
+
+  it('turns less and scrubs off more speed than steering just up to the limit', () => {
+    const exact = run(cruising, { steer: atLimit }, 1);
+    const over = run(cruising, { steer: 1 }, 1);
+    expect(exact.understeer).toBeLessThan(0.05);
+    // 横加速度 = 速さ × ヨーレート
+    expect(over.forwardSpeed * over.yawRate).toBeLessThan(exact.forwardSpeed * exact.yawRate * 0.9);
+    expect(over.forwardSpeed).toBeLessThan(exact.forwardSpeed - 1);
+  });
+
+  it('never turns harder than the grip allows however much the wheel is turned', () => {
+    for (const steer of [0.2, 0.5, 1]) {
+      const s = run(cruising, { steer }, 1);
+      expect(s.forwardSpeed * s.yawRate).toBeLessThanOrEqual(lateralAccelAt(s.forwardSpeed, P) + 1e-6);
+    }
+  });
+
+  it('does not slide at low speed even at full lock', () => {
+    expect(run({ ...REST, forwardSpeed: 3 }, { steer: 1 }, 1).understeer).toBe(0);
   });
 });
 

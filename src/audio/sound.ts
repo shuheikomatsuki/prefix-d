@@ -154,7 +154,7 @@ export class SoundSystem {
   }
 
   /** 毎フレーム呼ぶ */
-  update(speed: number, throttle: number, lateralSpeed: number, braking: boolean): void {
+  update(speed: number, throttle: number, lateralSpeed: number, braking: boolean, understeer = 0): void {
     const v = this.voices;
     if (!v) return;
     const t = v.ctx.currentTime;
@@ -164,8 +164,8 @@ export class SoundSystem {
     v.engineFilter.frequency.setTargetAtTime(tone.cutoff, t, 0.08);
     v.engineGain.gain.setTargetAtTime(tone.gain, t, 0.1);
 
-    // 横滑り、または速度が出ている状態での急ブレーキで鳴らす
-    const slip = Math.max(0, Math.abs(lateralSpeed) - 1.5) / 4;
+    // 横滑り、前のタイヤの滑り（アンダーステア）、または速度が出ている状態での急ブレーキで鳴らす
+    const slip = Math.max(0, Math.abs(lateralSpeed) - 1.5) / 4 + (speed > 5 ? understeer * 0.8 : 0);
     const brakeSkid = braking && speed > 8 ? 0.4 : 0;
     const screech = Math.min(1, slip + brakeSkid) * 0.12;
     v.screechGain.gain.setTargetAtTime(screech, t, 0.05);
