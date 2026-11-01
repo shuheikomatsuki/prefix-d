@@ -2,7 +2,7 @@ import type { Level } from '../game/level';
 import type { Npc } from '../game/npcRace';
 import type { CarSnapshot } from '../sim/car';
 import type { Subtitles } from '../ui/subtitles';
-import { type BattleContext, BattleDialogue, type BattleEvent, EdgeWatcher, OvertakeWatcher, type RivalDialogue, dialogueApplies, insideOf, sceneLines, turnAround, wentWide } from './dialogue';
+import { type BattleContext, BattleDialogue, type BattleEvent, CORNER_ENTRY_SPAN, CornerWatcher, EdgeWatcher, OvertakeWatcher, type RivalDialogue, dialogueApplies, insideOf, sceneLines, turnAround, wentWide } from './dialogue';
 import { RIVAL_DIALOGUES } from './dialogueScript';
 import type { TimeAttack } from './timeAttack';
 
@@ -23,7 +23,7 @@ export interface TalkFrame {
 /** ライバルとのバトルのセリフ（スタート前・走行中・勝負のあとの場面） */
 export class BattleTalk {
   /** いまのバトルのセリフ（セリフの無いライバルや、得意なコース以外では null） */
-  private talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher; wide: EdgeWatcher; inside: boolean; bumped: boolean } | null = null;
+  private talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher; wide: EdgeWatcher; corner: CornerWatcher; inside: boolean; bumped: boolean } | null = null;
 
   constructor(private readonly subtitles: Subtitles) {}
 
@@ -34,7 +34,7 @@ export class BattleTalk {
     if (!rival || !ctx) return;
     const script = RIVAL_DIALOGUES[rival];
     if (!dialogueApplies(script, ctx)) return;
-    this.talk = { script, ctx, lines: new BattleDialogue(script.race ?? [], ctx), overtakes: new OvertakeWatcher(), wide: new EdgeWatcher(), inside: false, bumped: false };
+    this.talk = { script, ctx, lines: new BattleDialogue(script.race ?? [], ctx), overtakes: new OvertakeWatcher(), wide: new EdgeWatcher(), corner: new CornerWatcher(), inside: false, bumped: false };
     const intro = nextRound ? (script.intro ?? []).filter((sc) => sc.when?.round !== undefined) : script.intro;
     this.subtitles.playScene(sceneLines(intro, ctx), () => {});
   }
@@ -71,6 +71,7 @@ export class BattleTalk {
     // コーナーでの位置: ライバルが外へはみ出したか・自分がインから抜いたか
     const rp = course.project(npc.curr.x, npc.curr.z, { s: npc.curr.courseS ?? null });
     const turn = turnAround(course, rp.s);
+    if (t.corner.update(turnAround(course, rp.s, CORNER_ENTRY_SPAN))) events.push('rivalCorner');
     if (t.wide.update(wentWide(turn, rp.offset, level.offRoadDistance(npc.curr.x, npc.curr.z, npc.curr.courseS) ?? 0))) events.push('rivalWide');
     // 抜いたと分かるのは少し前に出てからなので、横に並んでいた間にインにいたかを覚えておく
     if (Math.abs(signedGap) < 4) t.inside = insideOf(turn, course.project(car.x, car.z, { s: car.courseS ?? null }).offset, rp.offset);
@@ -89,6 +90,7 @@ export class BattleTalk {
         speedKmh: Math.abs(car.forwardSpeed) * 3.6,
         progress,
         events,
+        quiet: !this.subtitles.busy,
       }),
     );
   }

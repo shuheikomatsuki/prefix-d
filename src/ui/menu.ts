@@ -14,6 +14,8 @@ export interface MenuChoice {
   note?: string;
   /** 名前の右に出す小さな印（得意なコース・勝ったことのある相手など） */
   badge?: string;
+  /** まだ選んで進めない（解放されていない）。選んで説明を見ることはできるが、次へ進めない */
+  locked?: boolean;
 }
 
 /** 1つを選ぶ選択肢のまとまり */
@@ -41,6 +43,14 @@ export interface MenuScreen {
   en: string;
   groups: readonly MenuGroup[];
   detail: () => DetailView;
+}
+
+/** 選んでいるもののどれかが locked なら、次へ進めない */
+function screenBlocked(screen: MenuScreen): boolean {
+  return screen.groups.some((g) => {
+    const id = g.selected();
+    return g.choices().some((c) => c.id === id && c.locked);
+  });
 }
 
 /** プレイモード（トップ画面で選ぶ）と、その後に続けて選んでいく画面 */
@@ -299,6 +309,8 @@ export class GameMenu {
 
   private next(): void {
     if (this.stage !== 'mode' || !this.mode) return;
+    const screen = this.screen();
+    if (screen && screenBlocked(screen)) return;
     if (this.step < this.mode.screens().length - 1) {
       this.step++;
       this.focusGroup = 0;
@@ -447,6 +459,7 @@ export class GameMenu {
     this.backButton.textContent = '戻る';
     this.nextButton.textContent = this.step === screens.length - 1 ? (mode.finishLabel ?? 'スタート') : '次へ';
     this.nextButton.classList.toggle('start', this.step === screens.length - 1);
+    this.nextButton.disabled = screenBlocked(screen);
     this.stepsEl.innerHTML = screens
       .map((s, i) => `<li class="${i < this.step ? 'done' : i === this.step ? 'current' : ''}"><span>${pad2(i + 1)}</span>${escapeHtml(s.title)}</li>`)
       .join('');
@@ -462,7 +475,7 @@ export class GameMenu {
           .choices()
           .map(
             (c) =>
-              `<button type="button" class="choice${c.id === selected ? ' selected' : ''}${c.id === selected && gi === this.focusGroup ? ' focused' : ''}" data-group="${gi}" data-id="${escapeHtml(c.id)}"><span class="label">${escapeHtml(c.label)}${
+              `<button type="button" class="choice${c.id === selected ? ' selected' : ''}${c.locked ? ' locked' : ''}${c.id === selected && gi === this.focusGroup ? ' focused' : ''}" data-group="${gi}" data-id="${escapeHtml(c.id)}"><span class="label">${escapeHtml(c.label)}${
                 c.badge ? `<span class="badge">${escapeHtml(c.badge)}</span>` : ''
               }</span>${c.note ? `<small>${escapeHtml(c.note)}</small>` : ''}</button>`,
           )

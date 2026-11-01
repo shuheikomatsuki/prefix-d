@@ -56,6 +56,11 @@ export class Subtitles {
     }, true);
   }
 
+  /** 走っている間の字幕を出しているか（順番を待っているセリフも含む） */
+  get busy(): boolean {
+    return this.lineTimer > 0 || this.queue.length > 0;
+  }
+
   get sceneActive(): boolean {
     return this.sceneDone !== null;
   }

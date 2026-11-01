@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type BattleContext, BattleDialogue, type BattleSnapshot, EdgeWatcher, OvertakeWatcher, dialogueApplies, insideOf, MAX_LINE_CHARS, lineDuration, sceneLines, splitLine, turnAround, wentWide } from './dialogue';
+import { type BattleContext, BattleDialogue, type BattleSnapshot, CornerWatcher, EdgeWatcher, OvertakeWatcher, dialogueApplies, insideOf, MAX_LINE_CHARS, lineDuration, sceneLines, splitLine, turnAround, wentWide } from './dialogue';
 import { CHARACTERS, RIVAL_DIALOGUES } from './dialogueScript';
 import { RIVALS } from './rivals';
 import { VEHICLE_PRESETS } from '../sim/vehicle';
@@ -99,6 +99,18 @@ describe('BattleDialogue', () => {
     expect(d.update(snap({ events: ['crash'] }))).toHaveLength(1);
   });
 
+  it('oneAtATime は1つずつ順に出し、onlyWhenQuiet はほかの字幕が出ている間は言わない', () => {
+    const d = new BattleDialogue(
+      [{ when: { event: 'rivalCorner' }, repeat: true, oneAtATime: true, onlyWhenQuiet: true, say: [...line('どりゃー'), ...line('ふりゃー')] }],
+      ctx,
+    );
+    const corner = (quiet = true) => d.update(snap({ events: ['rivalCorner'], quiet })).map((l) => l.text);
+    expect(corner()).toEqual(['どりゃー']);
+    expect(corner(false)).toEqual([]);
+    expect(corner()).toEqual(['ふりゃー']);
+    expect(corner()).toEqual(['どりゃー']);
+  });
+
   it('場所も出来事もない条件は、満たした瞬間に出す（repeat は満たさなくなってから再び満たしたとき）', () => {
     const d = new BattleDialogue([{ when: { speed: { min: 150 } }, say: line('速い'), repeat: true }], ctx);
     expect(d.update(snap({ speedKmh: 160 }))).toHaveLength(1);
@@ -172,6 +184,11 @@ describe('コーナーでの出来事', () => {
   it('はみ出した瞬間だけ知らせる', () => {
     const w = new EdgeWatcher();
     expect([false, true, true, false, true].map((v) => w.update(v))).toEqual([false, true, false, false, true]);
+  });
+
+  it('コーナーに入った瞬間だけ知らせる（抜けるまでは同じコーナー）', () => {
+    const w = new CornerWatcher();
+    expect([0.1, 0.6, 0.9, 0.4, 0.6, 0.1, -0.7].map((v) => w.update(v))).toEqual([false, true, false, false, false, false, true]);
   });
 });
 

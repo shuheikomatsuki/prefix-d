@@ -15,7 +15,13 @@ export const RIVAL_DIALOGUES: Readonly<Record<string, RivalDialogue>> = {
   },
 
   nakazato: {
+    intro: [{ say: [{ who: 'nakazato', text: 'サーキットで最強のマシンは公道でも最強だぜ！' }] }],
     race: [
+      // 中盤から後、中里が前で、あまり離されずについて来られているとき
+      {
+        when: { progress: { min: 0.4 }, position: 'behind', gap: { max: 15 } },
+        say: [{ who: 'nakazato', text: 'クソッタレー手ごわい！' }],
+      },
       // 中里が前にいるとき（スタート直後の横並びは除く）
       {
         when: { position: 'behind', gap: { min: 5 }, elapsed: { min: 5 } },
@@ -75,7 +81,22 @@ export const RIVAL_DIALOGUES: Readonly<Record<string, RivalDialogue>> = {
   },
 
   hoshino: {
-    race: [{ when: { position: 'behind', elapsed: { min: 8 } }, say: [{ who: 'hoshino', text: 'オレは死ぬまで…GT-Rだ！！' }] }],
+    race: [
+      { when: { position: 'behind', elapsed: { min: 8 } }, say: [{ who: 'hoshino', text: 'オレは死ぬまで…GT-Rだ！！' }] },
+      // コーナーに入るたびのかけ声（順に1つずつ。ほかのセリフが出ている間は言わない）
+      {
+        when: { event: 'rivalCorner' },
+        repeat: true,
+        oneAtATime: true,
+        onlyWhenQuiet: true,
+        say: [
+          { who: 'hoshino', text: 'どりゃー！！' },
+          { who: 'hoshino', text: 'ふりゃあぁー！' },
+          { who: 'hoshino', text: 'うぉぉりゃぁあー！！' },
+          { who: 'hoshino', text: 'そりゃゃゃあぁあー！！' },
+        ],
+      },
+    ],
   },
 
   // 八方ヶ原風の峠（往復）: 第2セクションは 700m、ハイポイントコーナーの先の第3セクションは 1450m、谷の橋は 1990m から

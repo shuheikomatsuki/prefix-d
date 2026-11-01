@@ -44,6 +44,8 @@ export interface CarStyle {
   twoSeater?: boolean;
   /** 丸いヘッドライト */
   roundHead?: boolean;
+  /** リトラクタブル（ライトをつけるとボンネットから起き上がる）ヘッドライト */
+  popUp?: boolean;
   /** 窓と屋根を、ボディの側面からこれだけ内側に寄せる [m]（屋根のすぼまったオープンカーなど） */
   cabinInset?: number;
 }
@@ -62,11 +64,13 @@ const CAR_STYLES: Record<string, CarStyle> = {
   ek9: { roof: 1.4, window: [-2.0, 0.95, 0.35, -1.85], wing: 'low', color: 0xf3d41c },
   s13: { roof: 1.32, window: [-1.6, 1.0, 0.25, -0.85], color: 0x1a9e74 },
   s14: { roof: 1.34, window: [-1.65, 1.0, 0.25, -0.9], wing: 'low', color: 0xe2601f },
+  // 白いエボIV（屋根の高いセダンに大きなウイング）と見分けやすいよう、屋根が低く、後ろの窓を寝かせた小さなウイングのクーペ
+  fc3s: { roof: 1.3, window: [-1.95, 1.0, 0.22, -0.8], wing: 'low', popUp: true, color: 0xf6f6f2 },
   fd3s: { roof: 1.34, window: [-1.8, 1.05, 0.15, -0.7], wing: 'low', color: 0xf2c318 },
   evo3: { roof: 1.43, window: [-1.45, 0.95, 0.4, -1.1], wing: 'high', color: 0x141517 },
   evo: { roof: 1.43, window: [-1.45, 0.95, 0.4, -1.1], wing: 'high', color: 0xe9ecef },
   gtr: { roof: 1.37, window: [-1.6, 0.98, 0.3, -0.9], wing: 'low', roundTail: true, color: 0x2a2c30 },
-  r34: { roof: 1.38, window: [-1.55, 0.98, 0.3, -0.95], wing: 'high', roundTail: true, tailRadii: [0.08, 0.125], color: 0x4a3a70 },
+  r34: { roof: 1.38, window: [-1.55, 0.98, 0.3, -0.95], wing: 'high', roundTail: true, tailRadii: [0.08, 0.125], color: 0x8c8558 },
 };
 
 export function carStyle(carId: string): CarStyle {
@@ -112,10 +116,18 @@ function strut(
  */
 const LIGHT_COLORS = { headOff: 0x9da19c, headOn: 0xfffbea, tailOff: 0x6e1414, tailOn: 0xff2a1e };
 
+/** リトラクタブルヘッドライトが起き上がる高さ [m] と、起き上がる・閉じるのにかかる時間 [s] */
+const POP_UP_HEIGHT = 0.16;
+const POP_UP_SECONDS = 0.35;
+
 export class CarMesh {
   private headMat: THREE.MeshLambertMaterial | null = null;
   private tailMat: THREE.MeshLambertMaterial | null = null;
   private lightsOn = false;
+  /** リトラクタブルヘッドライト（起き上がる部分）と、どれだけ起き上がっているか（0 = 閉じている、1 = 開いている） */
+  private readonly popUps: THREE.Group[] = [];
+  private popUp = 0;
+  private lastUpdate: number | null = null;
   readonly root = new THREE.Group();
   private readonly frontPivots: THREE.Group[] = [];
   private readonly wheels: THREE.Mesh[] = [];
@@ -180,9 +192,22 @@ export class CarMesh {
     this.headMat = headMat;
     this.tailMat = tailMat;
     for (const s of [-1, 1]) {
-      const head = new THREE.Mesh(this.style.roundHead ? roundGeo(0.13) : lightGeo, headMat);
-      head.position.set(s * (width / 2 - 0.3), wheelRadius + 0.3, length / 2 + 0.01);
-      this.root.add(head);
+      if (this.style.popUp) {
+        // 閉じているときは上面だけがボンネットと同じ高さに見え、ライトをつけると起き上がって前にランプが見える
+        const pod = new THREE.Group();
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.44, POP_UP_HEIGHT + 0.01, 0.3), paint);
+        lid.position.y = -(POP_UP_HEIGHT + 0.01) / 2;
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.02), headMat);
+        lamp.position.set(0, -0.075, 0.151);
+        pod.add(lid, lamp);
+        pod.position.set(s * (width / 2 - 0.34), BELT_Y + 0.006, length / 2 - 0.3);
+        this.root.add(pod);
+        this.popUps.push(pod);
+      } else {
+        const head = new THREE.Mesh(this.style.roundHead ? roundGeo(0.13) : lightGeo, headMat);
+        head.position.set(s * (width / 2 - 0.3), wheelRadius + 0.3, length / 2 + 0.01);
+        this.root.add(head);
+      }
       if (roundTail) {
         // 丸いテールランプを左右に2つずつ
         // 外側の中心は、ランプの縁が車体の端から少し内側に来る位置
@@ -397,6 +422,14 @@ export class CarMesh {
     this.lightsOn = on;
     this.headMat?.emissive.setHex(on ? LIGHT_COLORS.headOn : 0x000000);
     this.tailMat?.emissive.setHex(on ? LIGHT_COLORS.tailOn : 0x000000);
+    // まだ走らせていない車（メニューの見た目など）は、すぐに開け閉めする
+    if (this.lastUpdate === null) this.placePopUps(on ? 1 : 0);
+  }
+
+  /** リトラクタブルヘッドライトを、amount（0 = 閉じている、1 = 開いている）だけ起き上がらせる */
+  private placePopUps(amount: number): void {
+    this.popUp = amount;
+    for (const pod of this.popUps) pod.position.y = BELT_Y + 0.006 + POP_UP_HEIGHT * amount;
   }
 
   setColor(color: number): void {
@@ -427,5 +460,13 @@ export class CarMesh {
     for (const w of this.wheels) w.rotation.x = s.wheelSpin;
     // 運転席から見て、左に切るとハンドルは反時計回り
     this.steeringWheel.rotation.z = -s.steerAngle * STEERING_RATIO;
+    if (this.popUps.length) {
+      const now = performance.now();
+      const dt = this.lastUpdate === null ? 1 : Math.min(0.1, (now - this.lastUpdate) / 1000);
+      this.lastUpdate = now;
+      const target = this.lightsOn ? 1 : 0;
+      const step = dt / POP_UP_SECONDS;
+      if (this.popUp !== target) this.placePopUps(this.popUp < target ? Math.min(target, this.popUp + step) : Math.max(target, this.popUp - step));
+    }
   }
 }
