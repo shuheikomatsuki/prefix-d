@@ -275,29 +275,27 @@ export const UTURN_MAP = roadMap('uturn', '峠（Uターン）', {
 const HAIRPIN_STRAIGHT = 25;
 
 /**
- * ヘアピンが左右交互に続くつづら折り。legs は [ヘアピンの手前の区間の長さ, ヘアピンの半径, 軽いカーブの角度] の並び。
+ * ヘアピンが左右交互に続くつづら折り。legs は [ヘアピンの手前の区間の長さ, ヘアピンの半径, 軽いカーブの角度, 波の数] の並び。
  * 最初のヘアピンが first の向き（1 = 左、-1 = 右）に回る。
  *
  * 軽いカーブの角度 [度] を書いた区間は、ヘアピンの前後の直線（HAIRPIN_STRAIGHT）を残して、その間を
- * 左右にゆるく弓なりに曲げる（+角度・-2×角度・+角度 の円弧で、向きは元に戻る）。隣り合う区間がぶつからないよう、
- * 弓のふくらむ向きは地図の上でそろえる（行きと帰りで曲がる向きが逆になる）
+ * 左右にゆるく弓なりに曲げる（+角度・-2×角度・+角度 の円弧で、向きは元に戻る）。波の数を 2 にすると、
+ * 弓を 2 つ続けた S 字（+角度・-2×角度・+2×角度・-2×角度・+角度）になり、同じ角度でも半径が半分で、横へのふくらみは小さい。
+ * 隣り合う区間がぶつからないよう、弓のふくらむ向きは地図の上でそろえる（行きと帰りで曲がる向きが逆になる）。
+ * ヘアピンの間は見通しの悪い区間（blind）で、木が道路のすぐ脇まで茂り、山側は岩の崖になる
  */
-function switchbacks(legs: readonly (readonly [number, number, number?])[], first: 1 | -1): RoadPiece[] {
-  return legs.flatMap(([leg, radius, bow], i): RoadPiece[] => {
+function switchbacks(legs: readonly (readonly [number, number, number?, number?])[], first: 1 | -1): RoadPiece[] {
+  return legs.flatMap(([leg, radius, bow, waves = 1], i): RoadPiece[] => {
     const hairpin: RoadPiece = { arc: { radius, turn: (i % 2 === 0 ? 180 : -180) * first } };
-    if (!bow) return [{ straight: leg }, hairpin];
+    if (!bow) return [{ straight: leg, blind: true }, hairpin];
     const rest = leg - 2 * HAIRPIN_STRAIGHT;
     const angle = (Math.abs(bow) * Math.PI) / 180;
-    const r = rest / (4 * angle);
+    const r = rest / (4 * waves * angle);
     const turn = bow * (i % 2 === 0 ? 1 : -1);
-    return [
-      { straight: HAIRPIN_STRAIGHT },
-      { arc: { radius: r, turn } },
-      { arc: { radius: r, turn: -2 * turn } },
-      { arc: { radius: r, turn } },
-      { straight: HAIRPIN_STRAIGHT },
-      hairpin,
-    ];
+    const bends: RoadPiece[] = [{ arc: { radius: r, turn }, blind: true }];
+    for (let w = 1; w < 2 * waves; w++) bends.push({ arc: { radius: r, turn: (w % 2 === 1 ? -2 : 2) * turn }, blind: true });
+    bends.push({ arc: { radius: r, turn }, blind: true });
+    return [{ straight: HAIRPIN_STRAIGHT, blind: true }, ...bends, { straight: HAIRPIN_STRAIGHT, blind: true }, hairpin];
   });
 }
 
@@ -334,15 +332,15 @@ const IROHA_DOWN_ROAD: RoadSpec = {
     // 上側のつづら折り
     ...switchbacks(
       [
-        [140, 16, 15],
+        [140, 16, 23],
         [125, 15],
-        [135, 17, 13],
-        [115, 15, 11],
+        [135, 17, 20],
+        [115, 15, 17],
         [130, 16],
-        [110, 15, 12],
-        [125, 17, 15],
+        [110, 15, 18],
+        [125, 17, 22],
         [105, 15],
-        [120, 16, 13],
+        [120, 16, 20],
       ],
       -1,
     ),
@@ -355,13 +353,13 @@ const IROHA_DOWN_ROAD: RoadSpec = {
     // 下側のつづら折り
     ...switchbacks(
       [
-        [130, 15, -13],
+        [130, 15, -20],
         [120, 16],
-        [130, 15, -15],
-        [110, 17, -11],
+        [130, 15, -23],
+        [110, 17, -17],
         [125, 15],
-        [105, 16, -12],
-        [120, 15, -14],
+        [105, 16, -18],
+        [120, 15, -21],
         [110, 18],
       ],
       -1,
@@ -417,17 +415,17 @@ const IROHA_UP_ROAD: RoadSpec = {
     // 斜面のつづら折り
     ...switchbacks(
       [
-        [240, 20, 14],
-        [225, 19, 10],
+        [240, 20, 15, 2],
+        [225, 19, 12, 2],
         [250, 21],
-        [220, 19, 12],
-        [235, 20, 8],
+        [220, 19, 14, 2],
+        [235, 20, 11, 2],
         [215, 19],
-        [240, 21, 15],
-        [210, 19, 10],
+        [240, 21, 16, 2],
+        [210, 19, 12, 2],
         [230, 20],
-        [220, 19, 12],
-        [225, 21, 9],
+        [220, 19, 14, 2],
+        [225, 21, 11, 2],
         [210, 20],
       ],
       1,

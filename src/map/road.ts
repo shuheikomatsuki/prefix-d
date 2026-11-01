@@ -38,6 +38,11 @@ export interface RoadPiece {
   gutter?: boolean;
   /** 見た目: 拡幅工事を終えた新しい舗装（黒く、白線がくっきり）か、古い狭い道（灰色で白線なし） */
   surface?: 'new' | 'old';
+  /**
+   * 見通しの悪い区間: 道路のすぐ脇まで木が茂り、山側（すぐ上を別の道路が通る側）は山を切り開いた岩の崖になる
+   * （src/map/roadCuts.ts）
+   */
+  blind?: boolean;
 }
 
 export interface RoadSpec {
@@ -91,6 +96,7 @@ export const FLAG_SUSPENSION = 8;
 export const FLAG_NEW = 16;
 export const FLAG_OLD = 32;
 export const FLAG_GUTTER = 64;
+export const FLAG_BLIND = 128;
 /** カーブの内側の側溝の幅 [m]（道路の端から外へ） */
 export const GUTTER_WIDTH = 0.5;
 
@@ -399,7 +405,8 @@ export function buildRoad(spec: RoadSpec): RoadModel {
       (p.bumpy ? FLAG_BUMPY : 0) |
       (p.suspension ? FLAG_SUSPENSION | FLAG_BRIDGE : 0) |
       (p.surface === 'new' ? FLAG_NEW : p.surface === 'old' ? FLAG_OLD : 0) |
-      (p.gutter && p.arc ? FLAG_GUTTER : 0);
+      (p.gutter && p.arc ? FLAG_GUTTER : 0) |
+      (p.blind ? FLAG_BLIND : 0);
   }
   if (closed) {
     const gap = Math.hypot(st.x - origin.x, st.z - origin.z);

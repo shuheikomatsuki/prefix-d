@@ -1,4 +1,5 @@
 import { FLAG_BRIDGE, type RoadModel } from './road';
+import { CUT_FOOT, CUT_TOP, buildRoadCuts, cutAt } from './roadCuts';
 import { CLIFF_START } from './terrain';
 
 /** 地形の格子の間隔 [m] */
@@ -45,6 +46,8 @@ export function buildRoadGround(
   const gz: number[] = [];
   const gh: number[] = [];
   const gw: number[] = [];
+  /** 地面を決める点の、道路の点の番号（U ターンの広場の点は -1） */
+  const gi: number[] = [];
   const every = Math.round(POINT_STEP / road.step);
   for (let i = 0; i < road.count; i += every) {
     if (road.flags[i] & FLAG_BRIDGE) continue;
@@ -52,6 +55,7 @@ export function buildRoadGround(
     gz.push(road.z[i]);
     gh.push(road.h[i]);
     gw.push(road.width[i] / 2);
+    gi.push(i);
   }
   const turn = road.turnaround;
   if (turn) {
@@ -63,6 +67,7 @@ export function buildRoadGround(
         gz.push(turn.cz + Math.sin((a / 24) * 2 * Math.PI) * r);
         gh.push(h);
         gw.push(turn.plaza * (r === 0 ? 1 : 0.5));
+        gi.push(-1);
       }
     }
   }
@@ -115,6 +120,9 @@ export function buildRoadGround(
     return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + e * u) * v;
   };
 
+  // 見通しの悪い区間の山側の岩の崖
+  const cuts = buildRoadCuts(road);
+
   // それぞれの格子点にいちばん近い道路の点（道路の点から周りの格子点へ書き込む）。
   // 比べるのは「中心からの距離 − 道幅の半分」（広場のような広い点ほど近い）。道路の上では負になる
   const nearestM = new Float64Array(nx * nz).fill(Infinity);
@@ -147,7 +155,15 @@ export function buildRoadGround(
       // d は道路の端からの距離（道路の上は 0）
       const d = Math.max(0, nearestM[cell]);
       const t = smoothstep((d - 2) / 30);
-      const h = gh[k] + (averageAt(i, j) - gh[k]) * t - CLIFF_DEPTH * smoothstep((d - CLIFF_START) / CLIFF_WIDTH);
+      let h = gh[k] + (averageAt(i, j) - gh[k]) * t - CLIFF_DEPTH * smoothstep((d - CLIFF_START) / CLIFF_WIDTH);
+      const ri = gi[k];
+      if (ri >= 0) {
+        // 山側の崖: 道路の端のすぐ外から切り立って上がり、上の端から先は平ら（上の道路との間の段）
+        const yaw = road.yaw[ri];
+        const lateral = (minX + i * GRID_STEP - gx[k]) * Math.cos(yaw) - (minZ + j * GRID_STEP - gz[k]) * Math.sin(yaw);
+        const cut = cutAt(cuts, ri, lateral);
+        if (cut > 0) h = Math.max(h, gh[k] + cut * smoothstep((d - CUT_FOOT) / (CUT_TOP - CUT_FOOT)));
+      }
       ground[cell] = h - 0.25 * (1 - smoothstep(d / 3));
     }
   }
