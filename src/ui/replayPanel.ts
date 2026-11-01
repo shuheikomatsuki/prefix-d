@@ -53,8 +53,10 @@ export class ReplayPanel {
             <svg viewBox="-50 -50 100 100"><circle r="40" fill="none" stroke="currentColor" stroke-width="9"/><path d="M-38 -4 H38 M0 -4 V38" stroke="currentColor" stroke-width="9" fill="none"/><rect x="-4" y="-48" width="8" height="12" fill="#ffb21c"/></svg>
           </div>
           <div class="rp-steer"><span class="rp-steer-text">まっすぐ</span><span class="rp-under">アンダー</span></div>
-          <div class="rp-pedal thr"><i></i><span>アクセル</span></div>
-          <div class="rp-pedal brk"><i></i><span>ブレーキ</span></div>
+          <div class="rp-pedals">
+            <div class="rp-pedal brk"><i></i><span>ブレーキ</span></div>
+            <div class="rp-pedal thr"><i></i><span>アクセル</span></div>
+          </div>
         </div>
         <canvas class="rp-graph"></canvas>
         <div class="rp-legend"><span class="s">ハンドル（上が左）</span><span class="t">アクセル</span><span class="b">ブレーキ</span><span class="u">アンダーステア</span></div>
@@ -69,7 +71,7 @@ export class ReplayPanel {
           <button type="button" class="rp-speedbtn" title="再生の速さ（↑ ↓）">×1</button>
           <span class="rp-time">0:00.00 / 0:00.00</span>
           <span class="spacer"></span>
-          <button type="button" class="rp-camera" title="カメラ（C）">カメラ<kbd>C</kbd></button>
+          <button type="button" class="rp-camera" title="カメラ（C）"><span class="rp-camname">カメラ</span><kbd>C</kbd></button>
         </div>
       </div>`;
     document.body.appendChild(this.root);
@@ -115,6 +117,11 @@ export class ReplayPanel {
 
   get isOpen(): boolean {
     return this.replay !== null;
+  }
+
+  /** カメラのボタンに、いまの視点の名前を出す */
+  setCameraName(name: string): void {
+    this.q<HTMLElement>('.rp-camname').textContent = name;
   }
 
   get following(): number {

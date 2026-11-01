@@ -3436,22 +3436,20 @@ body.touch.racing #hud {
   white-space: nowrap;
 }
 
-/* PC のゴールの画面: ボタン4つ（キーの印つき）が1行に入るよう少し広げる */
+/* PC のゴールの画面: 「もう一度」の他のボタン4つ（キーの印つき）が1行に入るよう少し広げる */
 body:not(.touch) #race-result {
-  width: min(520px, calc(100vw - 32px));
+  width: min(560px, calc(100vw - 32px));
 }
 
-/* 枠が狭いとき（縦向きのスマホ・横向きのスマホで右に寄せた枠）: ゴールの画面のボタンは 2列×2行（同じ大きさのまま）。
-   4つ横に並べると「コース・車など」が枠からはみ出す */
-#race-result {
-  container-type: inline-size;
+/* ゴールの画面のボタン（最大5つ）: 文字が切れない幅で折り返して並べ、「もう一度」は下の段いっぱいに置く。
+   枠の幅で列の数が変わる（PC は4列、縦向きのスマホは2列） */
+#race-result .dialog-buttons {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
 }
 
-@container (max-width: 470px) {
-  #race-result .dialog-buttons {
-    grid-auto-flow: row;
-    grid-template-columns: 1fr 1fr;
-  }
+#race-result .dialog-buttons .primary {
+  grid-column: 1 / -1;
 }
 
 .dialog-buttons .spacer {
@@ -4088,6 +4086,11 @@ body.touch #replay kbd {
 
 #replay .rp-under.on {
   visibility: visible;
+}
+
+#replay .rp-pedals {
+  display: flex;
+  gap: 10px;
 }
 
 #replay .rp-pedal {

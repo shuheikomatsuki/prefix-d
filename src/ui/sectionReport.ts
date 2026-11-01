@@ -34,7 +34,11 @@ export function sectionReportHtml(g: SectionGaps, rival: string): string {
   const lines: string[] = [];
   // 比べられた区間の合計で遅れていれば、詰めどころとして伝える
   const behind = g.gaps.reduce<number>((sum, x) => sum + (x ?? 0), 0) > 0;
-  if (g.worst !== null) lines.push(`いちばん離されたのは<b>区間${g.worst + 1}</b>（${signed(g.gaps[g.worst]!)}秒）。${behind ? 'ここを詰めれば差が縮まる。' : ''}`);
+  if (g.worst !== null) {
+    const where = `<b>区間${g.worst + 1}</b>（${signed(g.gaps[g.worst]!)}秒）`;
+    // 合計で勝っていれば「離された」ではなく、相手に詰められた所として伝える
+    lines.push(behind ? `いちばん離されたのは${where}。ここを詰めれば差が縮まる。` : `${escapeHtml(rival)}にいちばん詰められたのは${where}。`);
+  }
   if (g.best !== null) lines.push(`<b>区間${g.best + 1}</b>は${escapeHtml(rival)}より${Math.abs(g.gaps[g.best]!).toFixed(2)}秒速かった。`);
   return `<div class="sections">
     <p class="note">区間ごとのタイム差（＋は${escapeHtml(rival)}より遅い）</p>

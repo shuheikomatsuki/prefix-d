@@ -35,6 +35,7 @@ import { attachBubble } from './render/bubble';
 import { lapsDone, rankOnline, standingsWindow } from './race/onlineRace';
 import { OnlineRacePanel } from './ui/onlineRacePanel';
 import { CameraRig } from './render/camera';
+import { REPLAY_VIEWS, ReplayCamera, type ReplayViewId } from './render/replayCamera';
 import { CarMesh, carStyle, driverEyeFor } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
@@ -669,10 +670,13 @@ async function main() {
     spin: number[];
     lastTime: number;
     from: 'race' | 'ranking';
+    /** リプレイだけの外からの視点（null なら運転中と同じ視点） */
+    view: ReplayViewId | null;
   } | null = null;
+  const replayCam = new ReplayCamera();
   const replayPanel = new ReplayPanel({
     onClose: () => exitReplay(),
-    onCamera: () => cycleCamera(),
+    onCamera: () => cycleReplayCamera(),
     onFollow: (i) => followReplayCar(i),
   });
   /** メニューなどを閉じたときにも、リプレイの間は運転の入力を止めたままにする */
@@ -691,7 +695,7 @@ async function main() {
       view.scene.add(mesh.root);
       return mesh;
     });
-    replayView = { replay, clock: new ReplayClock(replayDuration(replay)), meshes, hints: replay.tracks.map(() => null), spin: replay.tracks.map(() => 0), lastTime: 0, from };
+    replayView = { replay, clock: new ReplayClock(replayDuration(replay)), meshes, hints: replay.tracks.map(() => null), spin: replay.tracks.map(() => 0), lastTime: 0, from, view: null };
     carMesh.root.visible = false;
     npcField?.setVisible(false);
     ghostMesh.root.visible = false;
@@ -700,7 +704,26 @@ async function main() {
     horns.input.touch = false;
     const first = Math.max(0, replay.tracks.findIndex((t) => !t.ghostly));
     replayPanel.open(replay, replayView.clock, first);
+    replayPanel.setCameraName(cameraRig.modeName);
     followReplayCar(first);
+  }
+  /** リプレイのカメラ: 運転中の視点（三人称・運転席）のあとに、TV中継・横から・前から・上空 */
+  function cycleReplayCamera() {
+    const rv = replayView;
+    if (!rv) return;
+    if (rv.view) {
+      const next = REPLAY_VIEWS.findIndex((v) => v.id === rv.view) + 1;
+      if (next < REPLAY_VIEWS.length) rv.view = REPLAY_VIEWS[next].id;
+      else {
+        rv.view = null;
+        cameraRig.select('chaseNear');
+        hud.setCameraName(cameraRig.modeName);
+      }
+    } else if (cameraRig.modeId === 'driver') rv.view = REPLAY_VIEWS[0].id;
+    else cycleCamera();
+    replayCam.reset();
+    cameraRig.snap();
+    replayPanel.setCameraName(rv.view ? REPLAY_VIEWS.find((v) => v.id === rv.view)!.name : cameraRig.modeName);
   }
   /** カメラで追いかける車を変える（その車の大きさ・運転席の目の高さに合わせる） */
   function followReplayCar(index: number) {
@@ -711,6 +734,7 @@ async function main() {
     cameraRig.setCarScale(style.scale ?? 1);
     cameraRig.setDriverEye(driverEyeFor(style));
     cameraRig.snap();
+    replayCam.reset();
   }
   /** reopen: ランキングから見ていたら、ランキングの画面に戻る */
   function exitReplay(reopen = true) {
@@ -734,7 +758,10 @@ async function main() {
     const advanced = rv.clock.update(frameDt);
     const t = rv.clock.time;
     // 大きく飛んだ（シーク）ときは、立体交差のどちらの道かを探し直す
-    if (Math.abs(t - rv.lastTime) > 1) rv.hints.fill(null);
+    if (Math.abs(t - rv.lastTime) > 1) {
+      rv.hints.fill(null);
+      replayCam.reset();
+    }
     rv.lastTime = t;
     const follow = replayPanel.following;
     let followSnap: CarSnapshot | null = null;
@@ -765,7 +792,18 @@ async function main() {
     // 追いかけている車を最後に描き、上に重ねる
     minimap.draw([...markers.filter((m) => m.size === undefined), ...markers.filter((m) => m.size !== undefined)]);
     level.syncProps();
-    cameraRig.update(s, frameDt);
+    const followTrack = rv.replay.tracks[follow];
+    if (rv.view && followTrack) {
+      // TV中継のカメラを置く所: 追いかけている車の少し先の位置（路面の高さに載せる）
+      const future = (sec: number) => {
+        const p = frameAt(followTrack, t + sec);
+        if (!p) return null;
+        const courseS = level.locate(p.x, p.z, p.yaw, null);
+        const g = level.ground({ ...s, x: p.x, y: 0.05, z: p.z, yaw: p.yaw, ...(courseS !== null ? { courseS } : {}) });
+        return { x: p.x, y: g.y, z: p.z, yaw: p.yaw };
+      };
+      replayCam.update(rv.view, s, future, cameraRig.camera, frameDt);
+    } else cameraRig.update(s, frameDt);
     view.followTarget(s.x, s.z, s.y);
     view.update(frameDt, cameraRig.camera);
     hud.update(s);
