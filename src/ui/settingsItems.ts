@@ -6,6 +6,8 @@ import type { CameraRig } from '../render/camera';
 import { MIRROR_MODES, type Mirrors, saveMirrorMode } from '../render/mirrors';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './fullscreen';
 import type { MenuItem } from './menu';
+import type { Minimap } from './minimap';
+import { MINIMAP_MODES, saveMinimapMode } from './minimapView';
 import { textDetail } from './menuDetails';
 import type { TouchControls } from './touchControls';
 
@@ -15,6 +17,7 @@ export const settingDetail = (title: string, lines: string[]) => () => textDetai
 export interface SettingsContext {
   cameraRig: CameraRig;
   mirrors: Mirrors;
+  minimap: Minimap;
   sound: SoundSystem;
   bgm: BgmPlayer;
   touch: TouchControls;
@@ -43,6 +46,20 @@ export function settingItems(c: SettingsContext): MenuItem[] {
         saveMirrorMode(c.mirrors.mode);
       },
       detail: settingDetail('ミラー', ['走っているときに出すミラー。押すたびに「なし → バックミラー → サイドのみ → バック＋サイド」と切り替わります。', '古いスマホで重いときは「なし」にしてください。']),
+    },
+    {
+      label: () => 'マップ',
+      value: () => MINIMAP_MODES.find((m) => m.id === c.minimap.mode)!.label,
+      run: () => {
+        const i = MINIMAP_MODES.findIndex((m) => m.id === c.minimap.mode);
+        c.minimap.mode = MINIMAP_MODES[(i + 1) % MINIMAP_MODES.length].id;
+        saveMinimapMode(c.minimap.mode);
+      },
+      detail: settingDetail('マップ', [
+        '右上の地図の出し方。押すたびに「周辺・回転 → 周辺・北が上 → 全体」と切り替わります。',
+        '周辺・回転: 自分の周りだけを、進む向きが上になるよう回して出す（アーケードのように）。',
+        '周辺・北が上: 自分の周りだけを、回さずに出す。全体: コース全体を出す。',
+      ]),
     },
     { label: () => '効果音', value: () => (c.sound.isMuted ? 'OFF' : 'ON'), run: c.toggleMute, detail: settingDetail('効果音', ['エンジン音・タイヤの音・ぶつかった音。M キーでも切り替えられます。']) },
     {

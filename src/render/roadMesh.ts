@@ -694,6 +694,9 @@ function buildLamps(road: RoadModel): THREE.Group {
   const every = Math.round(40 / road.step);
   for (let i = 0, n = 0; i < road.count; i += every, n++) {
     if (road.flags[i] & FLAG_SUSPENSION) continue;
+    // トンネルの中と坑口のそばには立てない（天井や山を突き抜ける）
+    const near = Math.round(8 / road.step);
+    if ([-near, 0, near].some((d) => road.flags[road.closed ? (i + d + road.count) % road.count : Math.min(road.count - 1, Math.max(0, i + d))] & FLAG_TUNNEL)) continue;
     const f = frame(road, i);
     const side = n % 2 === 0 ? 1 : -1;
     const off = side * (f.w / 2 + 0.55);

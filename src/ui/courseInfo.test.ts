@@ -26,7 +26,7 @@ describe('course profile for the menu', () => {
 
   it('treats the town as a free roam map and the Shutoko as a loop', () => {
     expect(courseProfile(MAPS[0]).kind).toBe('free');
-    const shutoko = courseProfile(MAPS.find((m) => m.id === 'shutoko-loop-2')!);
+    const shutoko = courseProfile(MAPS.find((m) => m.id === 'shutoko-c1')!);
     expect(shutoko.kind).toBe('loop');
     expect(shutoko.length).toBeGreaterThan(3000);
   });

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { AKINA_DOWN_MAP, HAPPOGAHARA_MAP, SHUTOKO_MAP } from '../map/maps';
+import { AKINA_DOWN_MAP, HAPPOGAHARA_MAP } from '../map/maps';
+import { STACKED_LOOP_MAP } from '../map/testMaps';
 import { LAYER_LOWER, LAYER_UPPER } from '../map/road';
 import { type Rapier, loadRapier } from '../sim/physics';
 import { Track } from './track';
@@ -51,7 +52,7 @@ describe('grade-separated crossings in the physics world', () => {
   });
 
   it('stacks the rings of the highway loop: the car below stays on the lower ring', () => {
-    const track = new Track(rapier, SHUTOKO_MAP);
+    const track = new Track(rapier, STACKED_LOOP_MAP);
     const road = track.road!;
     const start = road.layer.indexOf(LAYER_LOWER) * road.step - road.spec.start;
     const { maxImpact, layers, car } = driveAlong(track, start, start + 150);
