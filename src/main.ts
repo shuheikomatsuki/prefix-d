@@ -16,7 +16,9 @@ import { MAPS, TITLE_MAPS } from './map/maps';
 import { NetClient } from './net/client';
 import { LeaderboardClient } from './net/leaderboardClient';
 import { type RankedGhost, Ranking } from './game/ranking';
-import { type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
+import { type GhostPose, GhostRecorder, type Telemetry, ghostPoseAt } from './race/ghost';
+import { MAX_REPLAY_SECONDS, type Replay, ReplayClock, type ReplayTrack, frameAt, lapMarks, replayDuration } from './race/replay';
+import { ReplayPanel } from './ui/replayPanel';
 import { NPC_LEVELS, npcLevelById } from './race/npcDriver';
 import { type MissedTerm, RIVALS, markRivalBeaten, missedTerms, rivalLevel } from './race/rivals';
 import { missedTermsText } from './ui/rivalTerms';
@@ -38,9 +40,9 @@ import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
 import { nearestLit } from './game/headlights';
 import { Mirrors, loadMirrorMode } from './render/mirrors';
-import type { CarSnapshot, Spawn } from './sim/car';
+import { CAR_DIMENSIONS, type CarSnapshot, type Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
-import { NEUTRAL_INPUT, VEHICLE_PRESETS, topSpeedOf } from './sim/vehicle';
+import { type DriverInput, NEUTRAL_INPUT, VEHICLE_PRESETS, type VehicleParams, topSpeedOf } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { ConfirmDialog } from './ui/confirmDialog';
@@ -72,6 +74,15 @@ const NEXT_ROUND_DELAY = 3500;
 const REJOIN_DELAY = 1.2;
 /** エモートを続けて送れる間隔 [ms] */
 const EMOTE_COOLDOWN_MS = 1500;
+/** リプレイの記録を、全員ゴールしてからこの時間 [s] だけ続ける */
+const REPLAY_TAIL_SECONDS = 2;
+/** NPC がまだ走っていても、自分のゴールからこの時間 [s] で記録をやめる */
+const REPLAY_WAIT_SECONDS = 30;
+
+/** 車の様子と操作を、リプレイに記録する形にする */
+function telemetryOf(s: CarSnapshot, input: DriverInput, params: VehicleParams): Telemetry {
+  return { steer: s.steerAngle / params.maxSteerAngle, throttle: input.throttle, brake: input.brake, speed: s.forwardSpeed, understeer: s.understeer ?? 0 };
+}
 
 async function main() {
   // 古い版のゲームで保存したデータを、いまの版の形に直してから読み込む
@@ -199,6 +210,10 @@ async function main() {
   let ghostRecorder = new GhostRecorder();
   /** いまのコースと車での自己ベスト */
   let best: RaceRecord | null = null;
+  /** レースを始めたときの自己ベスト（一緒に走るゴースト。リプレイにも出す） */
+  let startBest: RaceRecord | null = null;
+  /** リプレイの記録（いまのレースの、自分と NPC。1台目が自分） */
+  let replayRec: { recorders: GhostRecorder[]; tracks: Omit<ReplayTrack, 'ghost' | 'inputs'>[]; clock: number; playerDone: number | null; allDone: number | null; stopped: boolean } | null = null;
   const ghostMesh = createGhostMesh();
   ghostMesh.root.visible = false;
   view.scene.add(ghostMesh.root);
@@ -239,6 +254,7 @@ async function main() {
     onQuit: () => stopRace(),
     onRanking: () => openRanking(),
     onChange: () => openChangeFlow(),
+    onReplay: () => watchLastRace(),
   });
 
   const placeCar = (spawn: Spawn) => {
@@ -285,6 +301,7 @@ async function main() {
    */
   function startRace(mode: RaceMode, toHome = false, nextRound = false) {
     if (mode === 'online') return;
+    exitReplay(false);
     if (race && raceMode === 'online') leaveOnlineRace();
     raceMode = mode;
     battleOffTerms = null;
@@ -317,18 +334,19 @@ async function main() {
     ghostCourseS.best = ghostCourseS.rival = 0;
     // NPC 対戦ではゴーストを出さず、記録も残さない
     best = mode === 'timeAttack' ? loadRecord(courseKey(level.def), vehicle().id) : null;
+    startBest = best;
     // 2列に互い違いに並ぶ。道幅に合わせて左右の間隔を決める
     const side = Math.min(3, course.widthAt(0) / 4);
     const slot = (i: number) => course.gridSpot(6 + 7 * i, i % 2 === 0 ? side : -side);
     if (mode === 'npc') {
       const grid = Array.from({ length: NPC_COUNT }, (_, i) => slot(i));
-      npcField = new NpcField(level, view.scene, npcEntries(NPC_COUNT, NPC_LEVELS[npcLevelIndex], carParams(), carStyle(vehicle().id)), laps, grid);
+      npcField = new NpcField(level, view.scene, npcEntries(NPC_COUNT, NPC_LEVELS[npcLevelIndex], carParams(), carStyle(vehicle().id)).map((e) => ({ ...e, carId: vehicle().id })), laps, grid);
       placeCar(slot(NPC_COUNT));
     } else if (mode === 'battle') {
       const r = battleRival();
       const preset = VEHICLE_PRESETS.find((v) => v.id === r.car) ?? VEHICLE_PRESETS[0];
       const style = carStyle(preset.id);
-      const entry = { name: r.name, color: style.color, level: rivalLevel(r), params: paramsForWeather(preset.params, env.weather), style, variation: 1, rough: roughOn() ? r.rough : null };
+      const entry = { name: r.name, carId: preset.id, color: style.color, level: rivalLevel(r), params: paramsForWeather(preset.params, env.weather), style, variation: 1, rough: roughOn() ? r.rough : null };
       if (suddenDeath) {
         // 先行が前、後追いはその後ろに同じ列で並ぶ
         const lead = course.gridSpot(6);
@@ -343,6 +361,7 @@ async function main() {
       placeCar(course.gridSpot(6));
     }
     npcField?.setLights(npcLightsOn());
+    startReplayRecording();
     raceHud.show(true);
     const go = touch.isShown ? 'アクセルを押すとスタート' : 'アクセル（W / ↑）でスタート';
     raceHud.showReady(suddenDeath ? `${suddenDeath.round}本目・あなたが${suddenDeath.playerLeads ? '先行' : '後追い'}　${go}` : go);
@@ -489,13 +508,14 @@ async function main() {
             const show = () => {
               raceHud.showStandings(standings(), r.totalLaps, raceMode === 'battle', sectionReport(), battleOffTerms);
               raceHud.showRankingButton(false);
+              raceHud.showReplayButton(true);
             };
             if (raceMode === 'battle') talk.outcome(won ? 'win' : 'lose', show);
             else show();
             break;
           }
           const previousBest = best?.total ?? null;
-          const merged = mergeRecord(best, { total: e.total, laps: e.laps, ghost: ghostRecorder.frames });
+          const merged = mergeRecord(best, { total: e.total, laps: e.laps, ghost: ghostRecorder.frames, inputs: ghostRecorder.inputs });
           const saved = merged.newTotal || merged.newLap ? saveRecord(courseKey(level.def), vehicle().id, merged.record) : true;
           best = merged.record;
           raceHud.showResult({
@@ -507,6 +527,7 @@ async function main() {
             bestLap: merged.record.bestLap,
             notSaved: !saved,
           });
+          raceHud.showReplayButton(true);
           raceHud.setWarning({ wrongWay: false, offCourse: false });
           sound.beep(true);
           reportToRanking(merged.newTotal);
@@ -570,6 +591,7 @@ async function main() {
     talk.outcome(won ? 'win' : 'lose', () => {
       if (suddenDeath !== sd) return;
       raceHud.showBattleResult(won ? (offTerms ? `条件外の勝利！ ${name} に勝った` : `勝利！ ${name} に勝った`) : `敗北… ${name} の勝ち`, `${sd.round}本目で決着：${why}`, offTerms);
+      raceHud.showReplayButton(true);
     });
   };
 
@@ -582,7 +604,182 @@ async function main() {
     return `${sd.round}本目・あなたが${sd.playerLeads ? '先行' : '後追い'}　差 ${gap}m（ゴールで ${SAFE_SECONDS}秒より離れたら先行の勝ち）`;
   };
 
+  // --- リプレイ: レースの走り（自分・NPC・ライバル）と、ランキングの人の走りを見返す ---
+  /** レースを始めるたびに、自分と NPC の記録を用意する */
+  function startReplayRecording() {
+    const me = { name: loadPlayerName().trim() || 'あなた', car: vehicle().id, color: carMesh.color, isPlayer: true };
+    const npcs = npcField?.npcs.map((n) => ({ name: n.name, car: n.carId || vehicle().id, color: n.color, isPlayer: false })) ?? [];
+    const tracks = [me, ...npcs];
+    replayRec = { recorders: tracks.map(() => new GhostRecorder()), tracks, clock: 0, playerDone: null, allDone: null, stopped: false };
+  }
+  /** スタートしてから、全員がゴールして少し経つまで（NPC が遅ければ自分のゴールから少しの間）記録する */
+  function recordReplay(r: TimeAttack, dt: number) {
+    const rec = replayRec;
+    if (!rec || rec.stopped || r.phase === 'ready' || r.phase === 'countdown') return;
+    rec.clock = r.phase === 'racing' ? r.time : rec.clock + dt;
+    rec.recorders[0].sample(rec.clock, curr, telemetryOf(curr, input, level.car.params));
+    npcField?.npcs.forEach((n, i) => rec.recorders[i + 1]?.sample(rec.clock, n.curr, telemetryOf(n.curr, n.input, n.car.params)));
+    if (r.phase === 'finished') rec.playerDone ??= rec.clock;
+    if (rec.playerDone !== null && (npcField?.npcs.every((n) => n.timer.phase === 'finished') ?? true)) rec.allDone ??= rec.clock;
+    const end = rec.allDone !== null ? rec.allDone + REPLAY_TAIL_SECONDS : rec.playerDone !== null ? rec.playerDone + REPLAY_WAIT_SECONDS : MAX_REPLAY_SECONDS;
+    if (rec.clock >= Math.min(end, MAX_REPLAY_SECONDS)) rec.stopped = true;
+  }
+  /** いまのレースのリプレイ（タイムアタックなら、一緒に走った自己ベスト・ランキングの人のゴーストも） */
+  function lastRaceReplay(): Replay | null {
+    const rec = replayRec;
+    if (!rec || !race) return null;
+    const tracks: ReplayTrack[] = rec.tracks.map((t, i) => ({ ...t, ghost: [...rec.recorders[i].frames], inputs: [...rec.recorders[i].inputs] }));
+    if (raceMode === 'timeAttack') {
+      if (startBest && startBest.ghost.length > 0) tracks.push({ name: '自己ベスト', car: vehicle().id, color: 0x7fd4ff, isPlayer: false, ghostly: true, ghost: startBest.ghost, inputs: startBest.inputs ?? [] });
+      if (rival) tracks.push({ name: rival.name, car: vehicle().id, color: 0xffa040, isPlayer: false, ghostly: true, ghost: rival.ghost, inputs: rival.inputs });
+    }
+    if (tracks[0].ghost.length < 6) return null;
+    const time = race.phase === 'finished' ? `　${formatTime(race.time)}` : '';
+    return { course: level.def.id, title: `${raceLabel()}・${level.def.name}${time}`, tracks, marks: lapMarks(race.laps) };
+  }
+  function watchLastRace() {
+    const replay = lastRaceReplay();
+    if (replay) enterReplay(replay, 'race');
+  }
+  /** ランキングで選んだ人の走りのリプレイ（同じ車の自分の自己ベストがあれば、半透明で並べる） */
+  function watchRanked(course: string, car: string, r: RankedGhost) {
+    const map = MAPS.findIndex((m) => m.id === course);
+    if (map < 0 || (map !== mapIndex && mapLocked())) return;
+    if (race) stopRace();
+    if (map !== mapIndex) {
+      loadMap(map);
+      net.send({ t: 'map', map: mapIndex });
+    }
+    const label = VEHICLE_PRESETS.find((v) => v.id === car)?.label ?? car;
+    const tracks: ReplayTrack[] = [{ name: r.name, car, color: carStyle(car).color, isPlayer: false, ghost: r.ghost, inputs: r.inputs }];
+    const mine = loadRecord(courseKey(level.def), car);
+    if (mine && mine.ghost.length > 0 && Math.abs(mine.total - r.total) > 1e-6) {
+      tracks.push({ name: '自分の自己ベスト', car, color: 0x7fd4ff, isPlayer: true, ghostly: true, ghost: mine.ghost, inputs: mine.inputs ?? [] });
+    }
+    enterReplay({ course, title: `${r.name} さん・${level.def.name}　${formatTime(r.total)}（${label}）`, tracks, marks: lapMarks(r.laps) }, 'ranking');
+  }
+
+  /** 見ているリプレイ（見ていなければ null） */
+  let replayView: {
+    replay: Replay;
+    clock: ReplayClock;
+    meshes: CarMesh[];
+    /** それぞれの車のコース上の距離（立体交差のどちらの道か） */
+    hints: (number | null)[];
+    spin: number[];
+    lastTime: number;
+    from: 'race' | 'ranking';
+  } | null = null;
+  const replayPanel = new ReplayPanel({
+    onClose: () => exitReplay(),
+    onCamera: () => cycleCamera(),
+    onFollow: (i) => followReplayCar(i),
+  });
+  /** メニューなどを閉じたときにも、リプレイの間は運転の入力を止めたままにする */
+  const setDrivingInput = (on: boolean) => {
+    keyboard.enabled = on && !replayView;
+    touch.enabled = on && !replayView;
+  };
+  function enterReplay(replay: Replay, from: 'race' | 'ranking') {
+    if (replayView || replay.course !== level.def.id || replay.tracks.length === 0) return;
+    menu.close();
+    const meshes = replay.tracks.map((t) => {
+      const style = carStyle(t.car);
+      const mesh = t.ghostly ? createGhostMesh(t.color, style) : new CarMesh(t.color, style);
+      if (replay.tracks.length > 1) mesh.root.add(createLabel(t.name));
+      mesh.setLights(t.isPlayer ? lightsOn : npcLightsOn());
+      view.scene.add(mesh.root);
+      return mesh;
+    });
+    replayView = { replay, clock: new ReplayClock(replayDuration(replay)), meshes, hints: replay.tracks.map(() => null), spin: replay.tracks.map(() => 0), lastTime: 0, from };
+    carMesh.root.visible = false;
+    npcField?.setVisible(false);
+    ghostMesh.root.visible = false;
+    rivalMesh.root.visible = false;
+    setDrivingInput(false);
+    horns.input.touch = false;
+    const first = Math.max(0, replay.tracks.findIndex((t) => !t.ghostly));
+    replayPanel.open(replay, replayView.clock, first);
+    followReplayCar(first);
+  }
+  /** カメラで追いかける車を変える（その車の大きさ・運転席の目の高さに合わせる） */
+  function followReplayCar(index: number) {
+    const rv = replayView;
+    const track = rv?.replay.tracks[index];
+    if (!rv || !track) return;
+    const style = carStyle(track.car);
+    cameraRig.setCarScale(style.scale ?? 1);
+    cameraRig.setDriverEye(driverEyeFor(style));
+    cameraRig.snap();
+  }
+  /** reopen: ランキングから見ていたら、ランキングの画面に戻る */
+  function exitReplay(reopen = true) {
+    const rv = replayView;
+    if (!rv) return;
+    replayView = null;
+    replayPanel.close();
+    for (const m of rv.meshes) m.dispose();
+    carMesh.root.visible = true;
+    npcField?.setVisible(true);
+    cameraRig.setCarScale(carStyle(vehicle().id).scale ?? 1);
+    cameraRig.setDriverEye(driverEyeFor(carStyle(vehicle().id)));
+    cameraRig.snap();
+    setDrivingInput(!menu.isOpen && !rankingPanel.isOpen && !onlinePanel.isOpen && !onlineRacePanel.isOpen);
+    // ランキングから見たときは、ランキングの画面に戻る
+    if (rv.from === 'ranking' && reopen) openRanking();
+  }
+  /** リプレイを1コマ描く */
+  function renderReplay(frameDt: number) {
+    const rv = replayView!;
+    const advanced = rv.clock.update(frameDt);
+    const t = rv.clock.time;
+    // 大きく飛んだ（シーク）ときは、立体交差のどちらの道かを探し直す
+    if (Math.abs(t - rv.lastTime) > 1) rv.hints.fill(null);
+    rv.lastTime = t;
+    const follow = replayPanel.following;
+    let followSnap: CarSnapshot | null = null;
+    let followFrame: ReturnType<typeof frameAt> = null;
+    const markers: MinimapMarker[] = [];
+    rv.replay.tracks.forEach((track, i) => {
+      const f = frameAt(track, t);
+      const mesh = rv.meshes[i];
+      mesh.root.visible = f !== null && !(track.ghostly && f.ended);
+      if (!f || !mesh.root.visible) return;
+      const courseS = level.locate(f.x, f.z, f.yaw, rv.hints[i]);
+      rv.hints[i] = courseS;
+      rv.spin[i] += (f.speed * advanced) / CAR_DIMENSIONS.wheelRadius;
+      const maxSteer = VEHICLE_PRESETS.find((v) => v.id === track.car)?.params.maxSteerAngle ?? 0.6;
+      const snap = level.ground({ x: f.x, y: 0.05, z: f.z, yaw: f.yaw, forwardSpeed: f.speed, lateralSpeed: 0, steerAngle: f.steer * maxSteer, wheelSpin: rv.spin[i], ...(courseS !== null ? { courseS } : {}) });
+      mesh.update(snap);
+      markers.push({ x: f.x, z: f.z, color: hex(track.color), ...(i === follow ? { yaw: f.yaw, size: 5 } : {}) });
+      if (i === follow) {
+        followSnap = snap;
+        followFrame = f;
+      }
+    });
+    replayPanel.update();
+    const s: CarSnapshot = (followSnap as CarSnapshot | null) ?? curr;
+    const f = followFrame as ReturnType<typeof frameAt>;
+    view.followCar(rv.meshes[follow]?.root ?? carMesh.root);
+    view.setRemoteHeadlights([]);
+    // 追いかけている車を最後に描き、上に重ねる
+    minimap.draw([...markers.filter((m) => m.size === undefined), ...markers.filter((m) => m.size !== undefined)]);
+    level.syncProps();
+    cameraRig.update(s, frameDt);
+    view.followTarget(s.x, s.z, s.y);
+    view.update(frameDt, cameraRig.camera);
+    hud.update(s);
+    if (f && rv.clock.playing) sound.update(Math.abs(f.speed), f.throttle, 0, f.brake > 0 && f.speed > 0, f.understeer);
+    else sound.update(0, 0, 0, false, 0);
+    view.fitToWindow(cameraRig.camera);
+    view.render(cameraRig.camera);
+    document.body.classList.remove('mirrors-on');
+    mirrors.render(view.renderer, view.scene, carMesh.root, false, mirrorRegion);
+  }
+
   const loadMap = (index: number, message = `マップ: ${MAPS[index].name}`) => {
+    // 部屋の人がマップを替えたときなど（リプレイはそのコースでしか見られない）
+    exitReplay(false);
     // NPC の車は古いマップの物理ワールドにいるので先に片付ける（レース中ならこの後で並び直す）
     npcField?.dispose();
     npcField = null;
@@ -715,6 +912,7 @@ async function main() {
     return course.gridSpot(6 + 6 * Math.floor(i / 2) + (i % 2) * 3, i % 2 === 0 ? side : -side);
   }
   function startOnlineRace(r: RaceState) {
+    exitReplay(false);
     if (race) clearRace();
     applyRaceSettings(r.settings);
     if (!level.course) return;
@@ -727,7 +925,9 @@ async function main() {
     const course = level.course;
     race = new TimeAttack(course, level.def.race!.laps, true);
     ghostRecorder = new GhostRecorder();
-    best = null;
+    best = startBest = null;
+    // オンライン対戦はみんなと走っているので、途中でリプレイを見られない（記録もしない）
+    replayRec = null;
     placeCar(onlineGridSpot());
     // カウントダウンの間は並んだ車どうしがぶつからないように
     remoteCars.ghost(performance.now(), 6000);
@@ -871,9 +1071,9 @@ async function main() {
   // --- ランキング ---
   const ranking = new Ranking(serverUrl ? new LeaderboardClient(serverUrl) : null, {
     onRace: (course, car, r) => raceAgainst(course, car, r),
+    onReplay: (course, car, r) => watchRanked(course, car, r),
     onOpenChange: (open) => {
-      keyboard.enabled = !open;
-      touch.enabled = !open;
+      setDrivingInput(!open);
     },
   });
   const rankingPanel = ranking.panel;
@@ -1026,8 +1226,7 @@ async function main() {
       },
       onLeave: () => leaveRoom(),
       onOpenChange: (open) => {
-        keyboard.enabled = !open;
-        touch.enabled = !open;
+        setDrivingInput(!open);
       },
     },
     serverUrl !== '',
@@ -1064,8 +1263,7 @@ async function main() {
         if (!isHost) hud.toast('今回の対戦は見送ります。出るときはメニューの「エントリー画面」から');
       },
       onOpenChange: (open) => {
-        keyboard.enabled = !open;
-        touch.enabled = !open;
+        setDrivingInput(!open);
       },
     },
   );
@@ -1089,6 +1287,7 @@ async function main() {
   keyboard.onAction('KeyK', () => race && raceMode === 'npc' && cycleNpcLevel());
   keyboard.onAction('KeyF', toggleLights);
   keyboard.onAction('KeyE', sendEmote);
+  keyboard.onAction('KeyV', () => raceHud.canReplay && watchLastRace());
 
   const gamepad = new GamepadInput();
   gamepad.onButton(PAD_BUTTON.north, cycleCamera);
@@ -1207,12 +1406,11 @@ async function main() {
       toast: (message) => hud.toast(message),
     }),
     onOpenChange: (open) => {
-      keyboard.enabled = !open;
-      touch.enabled = !open;
+      setDrivingInput(!open);
       document.body.classList.toggle('menu-open', open);
       if (!open) cameraRig.snap();
     },
-    canOpen: () => !onlinePanel.isOpen && !rankingPanel.isOpen && !onlineRacePanel.isOpen,
+    canOpen: () => !onlinePanel.isOpen && !rankingPanel.isOpen && !onlineRacePanel.isOpen && !replayView,
   });
   touch.refresh();
 
@@ -1255,6 +1453,8 @@ async function main() {
 
   const loop = new FixedStepLoop(
     (dt) => {
+      // リプレイを見ている間は、レースも車も止めておく
+      if (replayView) return;
       const pad = gamepad.read();
       hud.setGamepadConnected(gamepad.isConnected);
       input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
@@ -1320,7 +1520,8 @@ async function main() {
       if (race) {
         const r = race;
         r.update(dt, { x: curr.x, z: curr.z, ...velocityOf(curr) });
-        if (r.phase === 'racing') ghostRecorder.sample(r.time, curr);
+        if (r.phase === 'racing') ghostRecorder.sample(r.time, curr, telemetryOf(curr, input, level.car.params));
+        recordReplay(r, dt);
         const npc0 = npcField?.npcs[0];
         if (sections && npc0) {
           trackSections(sections.me, r, curr);
@@ -1344,6 +1545,10 @@ async function main() {
 
     },
     (alpha, frameDt) => {
+      if (replayView) {
+        renderReplay(frameDt);
+        return;
+      }
       subtitles.update(frameDt);
       const s = level.ground(lerpSnapshot(prev, curr, alpha));
       s.y += air.gap - fall.drop;
@@ -1430,7 +1635,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, getSuddenDeath: () => suddenDeath, menu, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), startBattle: (index = battleIndex) => { battleIndex = index; startRace('battle', true); }, subtitles, stopRace, openRanking, rankingPanel, net, remoteCars, touch, onlinePanel, cameraRig, sound },
+      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, getSuddenDeath: () => suddenDeath, menu, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), startBattle: (index = battleIndex) => { battleIndex = index; startRace('battle', true); }, subtitles, stopRace, openRanking, rankingPanel, watchReplay: watchLastRace, exitReplay: () => exitReplay(), getReplay: () => replayView, net, remoteCars, touch, onlinePanel, cameraRig, sound },
     });
   }
 

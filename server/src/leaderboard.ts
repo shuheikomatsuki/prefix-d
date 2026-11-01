@@ -7,15 +7,15 @@ import {
   publicEntry,
 } from '../../src/net/leaderboard';
 
-/** 送られてくる記録の大きさの上限 [byte]（15 分ぶんのゴーストが収まる） */
-const MAX_BODY_BYTES = 1_000_000;
+/** 送られてくる記録の大きさの上限 [byte]（15 分ぶんのゴーストと操作の記録が収まる） */
+const MAX_BODY_BYTES = 1_500_000;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 /**
  * 1つのランキング（コースと車の組み合わせ）= 1つの Durable Object。
- * 記録の一覧を 'entries' に、それぞれのゴーストを 'ghost:<id>' に保存する（SQLite 版の KV）。
+ * 記録の一覧を 'entries' に、それぞれのゴーストを 'ghost:<id>'、操作の記録を 'inputs:<id>' に保存する（SQLite 版の KV）。
  */
 export class Leaderboard extends DurableObject {
   private entries(): StoredEntry[] {
@@ -27,7 +27,8 @@ export class Leaderboard extends DurableObject {
     const ghost = url.pathname.match(/\/ghosts\/([A-Za-z0-9-]+)$/);
     if (request.method === 'GET' && ghost) {
       const data = this.ctx.storage.kv.get<number[]>(`ghost:${ghost[1]}`);
-      return data ? json({ ghost: data }) : json({ error: 'not found' }, 404);
+      // 操作の記録は、入れる前に送られた記録には無い
+      return data ? json({ ghost: data, inputs: this.ctx.storage.kv.get<number[]>(`inputs:${ghost[1]}`) ?? [] }) : json({ error: 'not found' }, 404);
     }
     if (request.method === 'GET') {
       return json({ entries: this.entries().slice(0, BOARD_SIZE).map(publicEntry) });
@@ -45,8 +46,14 @@ export class Leaderboard extends DurableObject {
       const sub = parseSubmission(body);
       if (!sub) return json({ error: 'bad record' }, 400);
       const { entries, result, removed, saved } = applySubmission(this.entries(), sub, crypto.randomUUID(), Date.now());
-      if (saved) this.ctx.storage.kv.put(`ghost:${saved.id}`, sub.ghost);
-      for (const id of removed) this.ctx.storage.kv.delete(`ghost:${id}`);
+      if (saved) {
+        this.ctx.storage.kv.put(`ghost:${saved.id}`, sub.ghost);
+        if (sub.inputs) this.ctx.storage.kv.put(`inputs:${saved.id}`, sub.inputs);
+      }
+      for (const id of removed) {
+        this.ctx.storage.kv.delete(`ghost:${id}`);
+        this.ctx.storage.kv.delete(`inputs:${id}`);
+      }
       this.ctx.storage.kv.put('entries', entries);
       return json(result);
     }

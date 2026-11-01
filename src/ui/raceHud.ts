@@ -60,8 +60,9 @@ export class RaceHud {
   private offCourse = false;
 
   private readonly rankingButton = el('race-ranking');
+  private readonly replayButton = el('race-replay');
 
-  constructor(handlers: { onRetry: () => void; onQuit: () => void; onRanking: () => void; onChange: () => void }) {
+  constructor(handlers: { onRetry: () => void; onQuit: () => void; onRanking: () => void; onChange: () => void; onReplay: () => void }) {
     const button = (id: string, run: () => void) => {
       const b = el(id);
       b.addEventListener('mousedown', (e) => e.preventDefault());
@@ -71,6 +72,7 @@ export class RaceHud {
     button('race-quit', handlers.onQuit);
     button('race-ranking', handlers.onRanking);
     button('race-change', handlers.onChange);
+    button('race-replay', handlers.onReplay);
   }
 
   show(on: boolean): void {
@@ -223,6 +225,16 @@ export class RaceHud {
     this.rankingButton.classList.toggle('hidden', !on);
   }
 
+  /** 結果の「リプレイ」ボタンを出すか */
+  showReplayButton(on: boolean): void {
+    this.replayButton.classList.toggle('hidden', !on);
+  }
+
+  /** 結果の「リプレイ」ボタンが出ているか */
+  get canReplay(): boolean {
+    return !this.result.classList.contains('hidden') && !this.replayButton.classList.contains('hidden');
+  }
+
   showResult(r: RaceResult): void {
     const lapRows = r.laps
       .map((t, i) => `<tr><td>${i + 1}周目</td><td>${formatTime(t)}${t === r.bestLap && r.newLap ? ' <span class="new">最速ラップ</span>' : ''}</td></tr>`)
@@ -283,6 +295,7 @@ export class RaceHud {
 
   hideResult(): void {
     this.standingsHtml = '';
+    this.showReplayButton(false);
     this.result.classList.add('hidden');
   }
 }

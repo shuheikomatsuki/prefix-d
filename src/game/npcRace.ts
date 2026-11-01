@@ -4,7 +4,7 @@ import { buildRacingLine } from '../race/racingLine';
 import { TimeAttack } from '../race/timeAttack';
 import { CarMesh, type CarStyle } from '../render/carMesh';
 import type { Car, CarSnapshot, Spawn } from '../sim/car';
-import { NEUTRAL_INPUT, type VehicleParams } from '../sim/vehicle';
+import { type DriverInput, NEUTRAL_INPUT, type VehicleParams } from '../sim/vehicle';
 import { FallRecovery } from './fall';
 import type { LitCar } from './headlights';
 import type { Level } from './level';
@@ -28,6 +28,10 @@ export interface Npc {
   curr: CarSnapshot;
   /** 峠で道路から落ちたとき */
   fall: FallRecovery;
+  /** 最後に車へ与えた操作（リプレイに記録する） */
+  input: DriverInput;
+  /** 車の id（リプレイに記録する。わからなければ空） */
+  carId: string;
 }
 
 /** 前方 (sin, cos)・左 (cos, -sin) の速度を足して、地面に対する速度にする */
@@ -50,6 +54,8 @@ export interface NpcEntry {
   level: NpcLevel;
   params: VehicleParams;
   style?: CarStyle;
+  /** 車の id（VEHICLE_PRESETS。リプレイでその車の形にする） */
+  carId?: string;
   /** 同じ強さの NPC どうしでも差がつくよう、グリップにかける係数 */
   variation: number;
   /** ラフプレーでプレイヤーにぶつけてくるなら、そのやり方 */
@@ -113,6 +119,8 @@ export class NpcField {
         prev: snap,
         curr: snap,
         fall: new FallRecovery(),
+        input: { ...NEUTRAL_INPUT },
+        carId: entry.carId ?? '',
       });
     });
   }
@@ -127,13 +135,15 @@ export class NpcField {
     const all = [...this.npcs.map((n) => n.curr), ...others];
     this.npcs.forEach((n, i) => {
       if (!canDrive || n.fall.falling) {
+        n.input = { ...NEUTRAL_INPUT };
         n.car.applyInput(NEUTRAL_INPUT, dt);
         return;
       }
       const opponents: Opponent[] = all.filter((_, j) => j !== i).map((s) => ({ x: s.x, z: s.z, ...velocityOf(s) }));
       n.driver.pace = n.timer.phase === 'finished' ? COOL_DOWN_PACE : 1;
       const mark = n.driver.rough && others[0] ? { x: others[0].x, z: others[0].z, ...velocityOf(others[0]) } : undefined;
-      n.car.applyInput(n.driver.update(dt, n.curr, opponents, mark), dt);
+      n.input = n.driver.update(dt, n.curr, opponents, mark);
+      n.car.applyInput(n.input, dt);
     });
   }
 
@@ -162,6 +172,11 @@ export class NpcField {
       const s = this.level.ground(lerpSnap(n.prev, n.curr, alpha));
       n.mesh.update({ ...s, y: s.y - n.fall.drop });
     }
+  }
+
+  /** 描画するか（リプレイを見ている間は隠す） */
+  setVisible(on: boolean): void {
+    for (const n of this.npcs) n.mesh.root.visible = on;
   }
 
   /** ライトをつける・消す */

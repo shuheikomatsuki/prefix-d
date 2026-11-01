@@ -1,4 +1,5 @@
-import type { LeaderboardEntry, Submission, SubmitResult } from './leaderboard';
+import { inputsMatch } from '../race/ghost';
+import type { LeaderboardEntry, RunData, Submission, SubmitResult } from './leaderboard';
 
 const PLAYER_KEY = 'car-game:player-id';
 const UPLOADED_PREFIX = 'car-game:uploaded:v1:';
@@ -70,8 +71,11 @@ export class LeaderboardClient {
     return (await this.request<{ entries: LeaderboardEntry[] }>(`${course}/${car}`)).entries;
   }
 
-  async ghost(course: string, car: string, id: string): Promise<number[]> {
-    return (await this.request<{ ghost: number[] }>(`${course}/${car}/ghosts/${id}`)).ghost;
+  /** その記録のゴーストと操作の記録（古いサーバー・古い記録なら操作は空） */
+  async run(course: string, car: string, id: string): Promise<RunData> {
+    const r = await this.request<{ ghost: number[]; inputs?: number[] }>(`${course}/${car}/ghosts/${id}`);
+    const inputs = Array.isArray(r.inputs) && inputsMatch(r.inputs, r.ghost.length) ? r.inputs : [];
+    return { ghost: r.ghost, inputs };
   }
 
   async submit(course: string, car: string, sub: Submission): Promise<SubmitResult> {
