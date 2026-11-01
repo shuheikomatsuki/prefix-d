@@ -377,6 +377,9 @@ export interface VehicleStepResult extends VehicleState {
 /** この速度未満では「止まっている」とみなし、ブレーキ入力を後退として扱う */
 const STOP_THRESHOLD = 0.5;
 
+/** ブレーキをいっぱいに踏んでも残る、曲がるのに使えるグリップの割合（ABS でタイヤがロックしない） */
+const BRAKE_GRIP_FLOOR = 0.35;
+
 /** この速さ [m/s] から横加速度の上限が増え始め、HIGH_SPEED_FULL で最大になる */
 const HIGH_SPEED_FROM = 15;
 const HIGH_SPEED_FULL = 40;
@@ -389,11 +392,34 @@ export function lateralAccelAt(speed: number, p: VehicleParams): number {
   return p.maxLateralAccel * (1 + (p.highSpeedGain ?? HIGH_SPEED_GAIN) * t);
 }
 
-/** 速度に応じた舵角の上限。低速では最大舵角、高速では横加速度が上限を超えないよう絞る */
-export function steerLimitAt(speed: number, p: VehicleParams): number {
+/**
+ * ブレーキを踏んでいる間に、曲がるのに使えるタイヤのグリップの割合（摩擦円）。
+ * タイヤが路面をつかめる力には限りがあり、減速に使った分だけ横向き（曲がる）に使える分が減る:
+ * 全体を 1 として、ブレーキの強さ b（0..1。b = 1 がブレーキの減速度 brakeDecel いっぱい）なら √(1 − b²)。
+ * ABS が付いている前提で、いっぱいに踏んでもタイヤはロックせず、少しは曲がれる（BRAKE_GRIP_FLOOR）
+ */
+export function cornerGripShare(brake: number): number {
+  const b = Math.min(1, Math.max(0, brake));
+  return Math.max(BRAKE_GRIP_FLOOR, Math.sqrt(1 - b * b));
+}
+
+/**
+ * 曲がるのにグリップの corner（0..1。1 は横加速度の上限いっぱい）を使っているときに、踏めるブレーキの強さ（0..1）。
+ * cornerGripShare の逆で、ここまでなら曲がる力を失わずにブレーキを踏める
+ */
+export function brakeGripShare(corner: number): number {
+  const c = Math.min(1, Math.max(0, corner));
+  return c <= BRAKE_GRIP_FLOOR ? 1 : Math.sqrt(1 - c * c);
+}
+
+/**
+ * 速度に応じた舵角の上限。低速では最大舵角、高速では横加速度が上限を超えないよう絞る。
+ * share は曲がるのに使えるグリップの割合（ブレーキ中は cornerGripShare）
+ */
+export function steerLimitAt(speed: number, p: VehicleParams, share = 1): number {
   const v2 = speed * speed;
   if (v2 < 1e-6) return p.maxSteerAngle;
-  return Math.min(p.maxSteerAngle, Math.atan((lateralAccelAt(speed, p) * p.wheelBase) / v2));
+  return Math.min(p.maxSteerAngle, Math.atan((lateralAccelAt(speed, p) * share * p.wheelBase) / v2));
 }
 
 function approach(current: number, target: number, maxDelta: number): number {
@@ -446,8 +472,9 @@ export function stepVehicle(
   const resistance = (throttle === 0 && brake === 0 ? p.coastDecel : 0) + p.dragCoef * v * v;
   v = decelerate(v, resistance * dt);
 
-  // --- ハンドル ---
-  const limit = steerLimitAt(v, p);
+  // --- ハンドル（ブレーキで減速に使ったグリップの分だけ、曲がれる力が減る） ---
+  const braking = brake > 0 && movingForward ? brake : throttle > 0 && movingBackward ? throttle : 0;
+  const limit = steerLimitAt(v, p, cornerGripShare(braking));
   const targetSteer = steer * limit;
   // 高速では舵角の上限が小さいので、切る速さも合わせて落とす（キーボードでも急に曲がりすぎない）
   const rateScale = Math.max(0.5, limit / p.maxSteerAngle);

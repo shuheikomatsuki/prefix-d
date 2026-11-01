@@ -1,5 +1,5 @@
 import type { CarSnapshot } from '../sim/car';
-import { type DriverInput, NEUTRAL_INPUT, type VehicleParams, driveAccelAt, lateralAccelAt, steerLimitAt } from '../sim/vehicle';
+import { type DriverInput, NEUTRAL_INPUT, type VehicleParams, cornerGripShare, driveAccelAt, lateralAccelAt, steerLimitAt } from '../sim/vehicle';
 import { type RacingLine, buildSpeedProfile } from './racingLine';
 
 /** NPC の強さ */
@@ -345,7 +345,6 @@ export class NpcDriver {
     const dist = Math.hypot(dx, dz);
     const alpha = Math.atan2(left, forward);
     const steerAngle = Math.atan((2 * p.wheelBase * Math.sin(alpha)) / Math.max(1, dist));
-    const steer = Math.max(-1, Math.min(1, steerAngle / steerLimitAt(Math.max(1, v), p)));
 
     // --- アクセル・ブレーキ ---
     let target = this.targetSpeed(here.s, Math.max(4, v * 0.25)) * this.pace;
@@ -372,6 +371,21 @@ export class NpcDriver {
     } else if (err < -0.4) {
       brake = Math.min(1, -err * 0.35);
     }
+    // 先の計画の速さまで落とすのに要る減速度だけ、前もってブレーキを踏む（遅れて踏むと、曲がりながら
+    // ブレーキを踏むことになり、摩擦円でタイヤのグリップが足りなくなってふくらむ）
+    if (!aim) {
+      let need = 0;
+      for (let d = this.line.step; d <= Math.max(10, v * 1.2); d += this.line.step) {
+        const vt = this.speed[this.indexAt(here.s + d)] * this.pace;
+        need = Math.max(need, (v * v - vt * vt) / (2 * d));
+      }
+      if (need > 0.5) {
+        throttle = 0;
+        brake = Math.max(brake, Math.min(1, need / p.brakeDecel));
+      }
+    }
+    // ブレーキ中は曲がれる舵角の上限が小さい（摩擦円）ので、その上限に対する割合でハンドルを切る
+    const steer = Math.max(-1, Math.min(1, steerAngle / steerLimitAt(Math.max(1, v), p, cornerGripShare(brake))));
     this.lastSteer = steer;
     return { throttle, brake, steer };
   }

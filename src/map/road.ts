@@ -43,6 +43,8 @@ export interface RoadPiece {
    * （src/map/roadCuts.ts）
    */
   blind?: boolean;
+  /** 見通しの悪い区間の山側（岩の崖）の向き（1 = 左、-1 = 右） */
+  cut?: 1 | -1;
 }
 
 export interface RoadSpec {

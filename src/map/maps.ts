@@ -272,30 +272,40 @@ export const UTURN_MAP = roadMap('uturn', '峠（Uターン）', {
 });
 
 /** ヘアピンのすぐ前後に残す直線の長さ [m]（ヘアピンの内側の近道の帯が、この直線にはさまれる） */
-const HAIRPIN_STRAIGHT = 25;
+const HAIRPIN_STRAIGHT = 14;
+/** ヘアピンの間のうねりの、1 往復（左右 1 組）のおおよその長さ [m] */
+const WAVE_LENGTH = 50;
+/** うねりの円弧が向きを変える角度の上限 [度] */
+const MAX_WAVE_ANGLE = 40;
 
 /**
- * ヘアピンが左右交互に続くつづら折り。legs は [ヘアピンの手前の区間の長さ, ヘアピンの半径, 軽いカーブの角度, 波の数] の並び。
- * 最初のヘアピンが first の向き（1 = 左、-1 = 右）に回る。
+ * ヘアピンが左右交互に続くつづら折り（スネークヘアピン）。legs は [ヘアピンの手前の区間の長さ, ヘアピンの半径,
+ * うねりのカーブの半径] の並び。最初のヘアピンが first の向き（1 = 左、-1 = 右）に回る。
  *
- * 軽いカーブの角度 [度] を書いた区間は、ヘアピンの前後の直線（HAIRPIN_STRAIGHT）を残して、その間を
- * 左右にゆるく弓なりに曲げる（+角度・-2×角度・+角度 の円弧で、向きは元に戻る）。波の数を 2 にすると、
- * 弓を 2 つ続けた S 字（+角度・-2×角度・+2×角度・-2×角度・+角度）になり、同じ角度でも半径が半分で、横へのふくらみは小さい。
- * 隣り合う区間がぶつからないよう、弓のふくらむ向きは地図の上でそろえる（行きと帰りで曲がる向きが逆になる）。
- * ヘアピンの間は見通しの悪い区間（blind）で、木が道路のすぐ脇まで茂り、山側は岩の崖になる
+ * ヘアピンの間は、ヘアピンの前後の短い直線（HAIRPIN_STRAIGHT）を残して、左右にうねり続ける
+ * （+角度・-2×角度・+2×角度 … -2×角度・+角度 の円弧で、向きは元に戻る）。うねりの数は区間の長さで決まり
+ * （WAVE_LENGTH ごとに 1 往復）、角度はうねりのカーブがその半径になるように決める。半径の符号は最初に曲がる向き。
+ * 隣り合う区間がぶつからないよう、うねりの向きは地図の上でそろえる（行きと帰りで曲がる向きが逆になる）。
+ *
+ * ヘアピンの間は見通しの悪い区間（blind）で、木が道路のすぐ脇まで茂り、山側は道路のすぐ脇から岩の崖が立つ。
+ * 山側は、下りなら一つ前の区間（上を通る）の側、上りなら一つ後の区間の側（descending）
  */
-function switchbacks(legs: readonly (readonly [number, number, number?, number?])[], first: 1 | -1): RoadPiece[] {
-  return legs.flatMap(([leg, radius, bow, waves = 1], i): RoadPiece[] => {
-    const hairpin: RoadPiece = { arc: { radius, turn: (i % 2 === 0 ? 180 : -180) * first } };
-    if (!bow) return [{ straight: leg, blind: true }, hairpin];
+function switchbacks(legs: readonly (readonly [number, number, number])[], first: 1 | -1, descending: boolean): RoadPiece[] {
+  return legs.flatMap(([leg, radius, bend], i): RoadPiece[] => {
+    const dir: 1 | -1 = i % 2 === 0 ? first : first === 1 ? -1 : 1;
+    const hairpin: RoadPiece = { arc: { radius, turn: 180 * dir } };
+    // 次の区間はヘアピンの曲がる側にある
+    const cut: 1 | -1 = descending === (dir === 1) ? -1 : 1;
     const rest = leg - 2 * HAIRPIN_STRAIGHT;
-    const angle = (Math.abs(bow) * Math.PI) / 180;
-    const r = rest / (4 * waves * angle);
-    const turn = bow * (i % 2 === 0 ? 1 : -1);
-    const bends: RoadPiece[] = [{ arc: { radius: r, turn }, blind: true }];
-    for (let w = 1; w < 2 * waves; w++) bends.push({ arc: { radius: r, turn: (w % 2 === 1 ? -2 : 2) * turn }, blind: true });
-    bends.push({ arc: { radius: r, turn }, blind: true });
-    return [{ straight: HAIRPIN_STRAIGHT, blind: true }, ...bends, { straight: HAIRPIN_STRAIGHT, blind: true }, hairpin];
+    const waves = Math.max(1, Math.round(rest / WAVE_LENGTH));
+    const angle = Math.min(MAX_WAVE_ANGLE, (rest / (4 * waves * Math.abs(bend)) / Math.PI) * 180);
+    const r = rest / (4 * waves * ((angle * Math.PI) / 180));
+    const turn = Math.sign(bend) * angle * (i % 2 === 0 ? 1 : -1);
+    const blind = { blind: true, cut } as const;
+    const bends: RoadPiece[] = [{ arc: { radius: r, turn }, ...blind }];
+    for (let w = 1; w < 2 * waves; w++) bends.push({ arc: { radius: r, turn: (w % 2 === 1 ? -2 : 2) * turn }, ...blind });
+    bends.push({ arc: { radius: r, turn }, ...blind });
+    return [{ straight: HAIRPIN_STRAIGHT, ...blind }, ...bends, { straight: HAIRPIN_STRAIGHT, ...blind }, hairpin];
   });
 }
 
@@ -306,7 +316,7 @@ function switchbacks(legs: readonly (readonly [number, number, number?, number?]
  * - 頂上の剣ヶ峰付近: 中速の左右が続く
  * - 急な斜面を、ヘアピンが積み重なるように下る上側のつづら折り（ヘアピン 9 個）
  * - 斜面をトラバースする中速区間の先で、下側のつづら折り（ヘアピン 8 個）
- * - 馬返の手前: 間隔の開いたコーナーと直線
+ * - 馬返の手前: 間隔の開いたコーナーと直線。最後に谷を橋で渡る
  *
  * 2 車線の一方通行で道幅は広い。ヘアピンの内側には段差のある近道の帯があり、
  * 内側の内側を攻める「地元走り」ができる（src/map/roadShortcuts.ts）
@@ -332,17 +342,18 @@ const IROHA_DOWN_ROAD: RoadSpec = {
     // 上側のつづら折り
     ...switchbacks(
       [
-        [140, 16, 23],
-        [125, 15],
-        [135, 17, 20],
-        [115, 15, 17],
-        [130, 16],
-        [110, 15, 18],
-        [125, 17, 22],
-        [105, 15],
-        [120, 16, 20],
+        [140, 16, 30],
+        [125, 15, 34],
+        [135, 17, 28],
+        [115, 15, 32],
+        [130, 16, 29],
+        [110, 15, 33],
+        [125, 17, 27],
+        [105, 15, 31],
+        [120, 16, 30],
       ],
       -1,
+      true,
     ),
     { straight: 150, h: 255 },
     // 斜面をトラバースする中速区間
@@ -353,16 +364,17 @@ const IROHA_DOWN_ROAD: RoadSpec = {
     // 下側のつづら折り
     ...switchbacks(
       [
-        [130, 15, -20],
-        [120, 16],
-        [130, 15, -23],
-        [110, 17, -17],
-        [125, 15],
-        [105, 16, -18],
-        [120, 15, -21],
-        [110, 18],
+        [130, 15, -30],
+        [120, 16, -33],
+        [130, 15, -28],
+        [110, 17, -32],
+        [125, 15, -29],
+        [105, 16, -34],
+        [120, 15, -30],
+        [110, 18, -31],
       ],
       -1,
+      true,
     ),
     { straight: 150, h: 95 },
     // 馬返の手前
@@ -375,7 +387,10 @@ const IROHA_DOWN_ROAD: RoadSpec = {
     { arc: { radius: 45, turn: 90 } },
     { straight: 160 },
     { arc: { radius: 35, turn: 60 } },
-    { straight: 160 },
+    // 馬返の手前で谷を渡る橋
+    { straight: 25 },
+    { straight: 110, bridge: true, valley: 22 },
+    { straight: 25 },
     { arc: { radius: 120, turn: -20 } },
     { straight: 200, h: 0 },
   ],
@@ -415,20 +430,21 @@ const IROHA_UP_ROAD: RoadSpec = {
     // 斜面のつづら折り
     ...switchbacks(
       [
-        [240, 20, 15, 2],
-        [225, 19, 12, 2],
-        [250, 21],
-        [220, 19, 14, 2],
-        [235, 20, 11, 2],
-        [215, 19],
-        [240, 21, 16, 2],
-        [210, 19, 12, 2],
-        [230, 20],
-        [220, 19, 14, 2],
-        [225, 21, 11, 2],
-        [210, 20],
+        [240, 20, 34],
+        [225, 19, 38],
+        [250, 21, 32],
+        [220, 19, 36],
+        [235, 20, 33],
+        [215, 19, 37],
+        [240, 21, 31],
+        [210, 19, 35],
+        [230, 20, 34],
+        [220, 19, 38],
+        [225, 21, 32],
+        [210, 20, 36],
       ],
       1,
+      false,
     ),
     { straight: 160, h: 360 },
     // 明智平の手前の中速区間
