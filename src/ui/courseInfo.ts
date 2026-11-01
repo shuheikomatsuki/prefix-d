@@ -127,7 +127,7 @@ export const COURSE_NOTES: Record<string, CourseNote> = {
     cars: ['fd3s', 'evo'],
   },
   'myogi-up': {
-    text: '妙義ナイトキッズのホーム。狭く荒れた連続コーナー、パワーが物を言う上りのストレート、岩の崖が迫るつづら折り',
+    text: '妙義ナイトキッズのホーム。狭く荒れた崖沿いの連続コーナー、電球の形に回り込むヘアピン、岩の崖が迫るヘアピンの 3 連続',
     cars: ['r34', 'fd3s'],
   },
   happogahara: {
