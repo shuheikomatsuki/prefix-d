@@ -18,13 +18,26 @@ export interface NpcLevel {
   defend?: boolean;
 }
 
+/**
+ * 弱い順。ひとりで走ったタイムは、超上級に比べて上級が約3〜4%、中級が約5〜8%、初級が約11〜17% 遅い
+ * （段階ごとの差がだいたい同じになるようにしてある）
+ */
 export const NPC_LEVELS: readonly NpcLevel[] = [
-  { id: 'easy', label: '初級', grip: 0.68, brake: 0.62, line: 0.3, topSpeed: 0.85 },
-  { id: 'normal', label: '中級', grip: 0.82, brake: 0.76, line: 0.7, topSpeed: 0.93 },
-  { id: 'hard', label: '上級', grip: 0.92, brake: 0.88, line: 1, topSpeed: 0.98, defend: true },
-  { id: 'pro', label: '達人', grip: 0.97, brake: 0.95, line: 1, topSpeed: 1, defend: true },
-  { id: 'legend', label: '伝説', grip: 1, brake: 1, line: 1, topSpeed: 1, defend: true },
+  { id: 'easy', label: '初級', grip: 0.72, brake: 0.66, line: 0.4, topSpeed: 0.88 },
+  { id: 'normal', label: '中級', grip: 0.83, brake: 0.78, line: 0.75, topSpeed: 0.94 },
+  { id: 'hard', label: '上級', grip: 0.9, brake: 0.86, line: 1, topSpeed: 0.97, defend: true },
+  { id: 'legend', label: '超上級', grip: 1, brake: 1, line: 1, topSpeed: 1, defend: true },
 ];
+
+/** 前にあった段階の id を、いまの段階の id に読み替える（保存した選択・URL の ?npc=） */
+const OLD_LEVEL_IDS: Readonly<Record<string, string>> = { pro: 'hard' };
+
+/** id の強さ（無ければ undefined）。前にあった「達人」（pro）は上級として扱う */
+export function npcLevelById(id: string | null | undefined): NpcLevel | undefined {
+  if (!id) return undefined;
+  const want = OLD_LEVEL_IDS[id] ?? id;
+  return NPC_LEVELS.find((l) => l.id === want);
+}
 
 /** 他の車の位置と速度（よけるため） */
 export interface Opponent {

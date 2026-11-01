@@ -1,6 +1,6 @@
 import { SHOW_PORTRAITS } from './portraits';
 import type { MapDefinition } from '../map/tilemap';
-import type { NpcLevel } from '../race/npcDriver';
+import { NPC_LEVELS, type NpcLevel } from '../race/npcDriver';
 import type { Rival } from '../race/rivals';
 import type { CarPreview } from '../render/carPreview';
 import type { VehiclePreset } from '../sim/vehicle';
@@ -243,11 +243,11 @@ function levelRows(level: NpcLevel): string {
   ]);
 }
 
-const LEVEL_STARS: Record<string, number> = { easy: 1, normal: 2, hard: 3, pro: 4, legend: 5 };
-
+/** 強さを星で表す（初級 1つ〜超上級 4つ） */
 function stars(level: NpcLevel): string {
-  const n = LEVEL_STARS[level.id] ?? 3;
-  return `<span class="stars" aria-label="${n} / 5">${'★'.repeat(n)}<i>${'★'.repeat(5 - n)}</i></span>`;
+  const total = NPC_LEVELS.length;
+  const n = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === level.id)) + 1;
+  return `<span class="stars" aria-label="${n} / ${total}">${'★'.repeat(n)}<i>${'★'.repeat(total - n)}</i></span>`;
 }
 
 /** 写真のない人の代わりの絵（名前の頭文字） */
@@ -257,7 +257,12 @@ function portrait(name: string, photo: string | undefined): string {
 }
 
 /** ライバルの説明: 写真（SHOW_PORTRAITS のときだけ）・チーム・車・得意なコース・強さ */
-export function rivalDetail(rival: Rival, level: NpcLevel, info: { car: string; course: string; beaten: boolean }, preview: CarPreview): DetailView {
+export function rivalDetail(
+  rival: Rival,
+  level: NpcLevel,
+  info: { car: string; course: string; beaten: boolean; winTerms: string; unlock: string | null },
+  preview: CarPreview,
+): DetailView {
   return {
     html: `<div class="d-rival${SHOW_PORTRAITS ? '' : ' no-portrait'}">
       ${SHOW_PORTRAITS ? `<div class="d-portrait">${portrait(rival.name, rival.photo)}${info.beaten ? '<span class="d-tag hot">WIN</span>' : ''}</div>` : ''}
@@ -266,10 +271,12 @@ export function rivalDetail(rival: Rival, level: NpcLevel, info: { car: string; 
         <h2 class="d-name">${escapeHtml(rival.name)}</h2>
         <p class="d-level">${stars(level)}<span>${escapeHtml(level.label)}</span></p>
         <p class="d-text">${escapeHtml(rival.bio)}</p>
+        ${info.unlock ? `<p class="d-lock">🔒 ${escapeHtml(info.unlock)}</p>` : ''}
         ${specs([
           ['マシン', info.car],
           ['得意コース', info.course],
           ...(rival.rough ? ([['ラフプレー', `選べる（${rival.roughNote ?? 'ぶつけてくる'}）`]] as [string, string][]) : []),
+          ['WIN条件', info.winTerms],
         ])}
         ${levelRows(level)}
         <div class="d-garage"><div class="preview-slot"></div></div>

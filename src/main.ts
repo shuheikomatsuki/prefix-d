@@ -17,8 +17,9 @@ import { NetClient } from './net/client';
 import { LeaderboardClient } from './net/leaderboardClient';
 import { type RankedGhost, Ranking } from './game/ranking';
 import { type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
-import { NPC_LEVELS } from './race/npcDriver';
-import { RIVALS, markRivalBeaten, rivalLevel } from './race/rivals';
+import { NPC_LEVELS, npcLevelById } from './race/npcDriver';
+import { type MissedTerm, RIVALS, markRivalBeaten, missedTerms, rivalLevel } from './race/rivals';
+import { missedTermsText } from './ui/rivalTerms';
 import type { BattleContext } from './race/dialogue';
 import { BattleTalk } from './race/battleTalk';
 import { CHARACTERS } from './race/dialogueScript';
@@ -175,13 +176,26 @@ async function main() {
   /** ライバルにラフプレーをさせるか（できるライバルだけ） */
   let battleRough = false;
   const roughOn = () => battleRough && !!battleRival().rough;
+  /** 横並びのバトルに条件外で勝ったときの、満たしていない条件の説明（結果の画面に出す） */
+  let battleOffTerms: string | null = null;
+  /** いまのバトルで満たしていない WIN の条件（得意コース・時間帯・天気・ラフプレー） */
+  const battleMissedTerms = (): MissedTerm[] => missedTerms(battleRival(), { course: level.def.id, time: env.time, weather: env.weather, rough: roughOn() });
+  /** バトルに勝った: 条件を満たしていれば WIN を記録する。満たしていなければ、その説明を返す */
+  const recordBattleWin = (): string | null => {
+    const missed = battleMissedTerms();
+    if (missed.length === 0) {
+      markRivalBeaten(battleRival().id);
+      return null;
+    }
+    return missedTermsText(battleRival(), missed);
+  };
   /** 先行後追いのバトルの進行（それ以外のレースでは null） */
   let suddenDeath: SuddenDeath | null = null;
   let nextRoundTimer: number | undefined;
   /** NPC 対戦の NPC たち */
   let npcField: NpcField | null = null;
   /** NPC の強さ（?npc=pro のように指定できる） */
-  let npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === (params.get('npc') ?? 'hard')));
+  let npcLevelIndex = Math.max(0, NPC_LEVELS.indexOf(npcLevelById(params.get('npc') ?? 'hard') ?? NPC_LEVELS[2]));
   let ghostRecorder = new GhostRecorder();
   /** いまのコースと車での自己ベスト */
   let best: RaceRecord | null = null;
@@ -273,6 +287,7 @@ async function main() {
     if (mode === 'online') return;
     if (race && raceMode === 'online') leaveOnlineRace();
     raceMode = mode;
+    battleOffTerms = null;
     window.clearTimeout(nextRoundTimer);
     // 先行後追いは、引き分けで次の1本へ進むときだけ続きから。それ以外は1本目から
     suddenDeath = mode === 'battle' && battleRule !== 'side' ? (nextRound && suddenDeath ? suddenDeath : new SuddenDeath(battleRule === 'leadFirst')) : null;
@@ -468,11 +483,11 @@ async function main() {
           if (raceMode !== 'timeAttack') {
             const list = standings();
             const won = list[0]?.isPlayer ?? false;
-            if (raceMode === 'battle' && won) markRivalBeaten(battleRival().id);
+            battleOffTerms = raceMode === 'battle' && won ? recordBattleWin() : null;
             raceHud.setWarning({ wrongWay: false, offCourse: false });
             sound.beep(true);
             const show = () => {
-              raceHud.showStandings(standings(), r.totalLaps, raceMode === 'battle', sectionReport());
+              raceHud.showStandings(standings(), r.totalLaps, raceMode === 'battle', sectionReport(), battleOffTerms);
               raceHud.showRankingButton(false);
             };
             if (raceMode === 'battle') talk.outcome(won ? 'win' : 'lose', show);
@@ -551,10 +566,10 @@ async function main() {
     }
     const why = outcome === 'leadWins' ? `${lead}（先行）が ${SAFE_SECONDS}秒より大きな差をつけてゴールした` : `${chase}（後追い）が抜いて先にゴールした`;
     const won = sd.winner === 'player';
-    if (won) markRivalBeaten(battleRival().id);
+    const offTerms = won ? recordBattleWin() : null;
     talk.outcome(won ? 'win' : 'lose', () => {
       if (suddenDeath !== sd) return;
-      raceHud.showBattleResult(won ? `勝利！ ${name} に勝った` : `敗北… ${name} の勝ち`, `${sd.round}本目で決着：${why}`);
+      raceHud.showBattleResult(won ? (offTerms ? `条件外の勝利！ ${name} に勝った` : `勝利！ ${name} に勝った`) : `敗北… ${name} の勝ち`, `${sd.round}本目で決着：${why}`, offTerms);
     });
   };
 
@@ -1123,7 +1138,7 @@ async function main() {
       setEnvironment(choices.time, choices.weather, false);
       const car = VEHICLE_PRESETS.findIndex((v) => v.id === choices.car);
       if (car >= 0 && car !== carIndex) selectCar(car);
-      npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === choices.npc));
+      npcLevelIndex = Math.max(0, NPC_LEVELS.indexOf(npcLevelById(choices.npc) ?? NPC_LEVELS[0]));
       battleIndex = Math.max(0, RIVALS.findIndex((r) => r.id === choices.rival));
       battleRule = choices.rule;
       battleRough = choices.rough;
@@ -1365,7 +1380,7 @@ async function main() {
           battle: battleInfo(),
         });
         // ゴールした後も、まだ走っている NPC がゴールするたびに順位表を更新する（先行後追いは別の結果）
-        if (rank && race.phase === 'finished' && !suddenDeath) raceHud.showStandings(rank.list, race.totalLaps, raceMode === 'battle', sectionReport());
+        if (rank && race.phase === 'finished' && !suddenDeath) raceHud.showStandings(rank.list, race.totalLaps, raceMode === 'battle', sectionReport(), battleOffTerms);
         minimapRace = [
           ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
           ...(rivalPose ? [{ x: rivalPose.x, z: rivalPose.z, color: '#ffa040' }] : []),

@@ -51,9 +51,9 @@ export interface SceneCondition {
  * 走っている途中の出来事:
  * 'overtake'（自分がライバルを抜いた）、'overtakeInside'（コーナーでライバルをインから抜いた。'overtake' も同時に起きる）、
  * 'overtaken'（ライバルに抜かれた）、'crash'（自分が壁に強くぶつかった）、'rivalWide'（ライバルがコーナーで外へはみ出した）、
- * 'rivalBump'（ラフプレーでライバルにぶつけられた）
+ * 'rivalBump'（ラフプレーでライバルにぶつけられた）、'rivalCorner'（ライバルがコーナーに入った）
  */
-export type BattleEvent = 'overtake' | 'overtakeInside' | 'overtaken' | 'crash' | 'rivalWide' | 'rivalBump';
+export type BattleEvent = 'overtake' | 'overtakeInside' | 'overtaken' | 'crash' | 'rivalWide' | 'rivalBump' | 'rivalCorner';
 
 export interface RaceCondition extends SceneCondition {
   /** この出来事が起きたとき（配列なら、どれかが起きたとき） */
@@ -84,6 +84,10 @@ export interface RaceLine {
   say: readonly DialogueLine[];
   /** 1回のバトルで何度も出してよいか（書かなければ1回だけ）。何度も出すときは、条件を満たさなくなってから再び満たしたときに出す */
   repeat?: boolean;
+  /** say のセリフを1回に1つずつ、書いた順に出す（最後まで出したら最初に戻る。repeat と一緒に使う） */
+  oneAtATime?: boolean;
+  /** ほかのセリフの字幕が出ている間は出さない（コーナーごとのかけ声など、遅れて出ると変なもの） */
+  onlyWhenQuiet?: boolean;
 }
 
 export interface RivalDialogue {
@@ -128,6 +132,8 @@ export interface BattleSnapshot {
   progress: number;
   /** このステップで起きた出来事 */
   events: readonly BattleEvent[];
+  /** 走っている間の字幕が何も出ていないか（書かなければ出ていないとみなす） */
+  quiet?: boolean;
 }
 
 const includes = <T>(want: OneOrMany<T> | undefined, value: T) =>
@@ -162,6 +168,8 @@ export function sceneLines(scenes: readonly Scene[] | undefined, ctx: BattleCont
 /** 走っている途中のセリフを、条件を見ながら出していく（1回のバトルの1本ごとに作る） */
 export class BattleDialogue {
   private readonly said = new Set<number>();
+  /** oneAtATime のセリフを、それぞれ何回出したか */
+  private readonly turns: number[] = [];
   private readonly wasMatching: boolean[];
   private lastDistance: number | null = null;
   private lastLap = 1;
@@ -185,8 +193,13 @@ export class BattleDialogue {
       this.wasMatching[i] = matching;
       if (!rising) return;
       if (!line.repeat && this.said.has(i)) return;
+      if (line.onlyWhenQuiet && (s.quiet === false || out.length > 0)) return;
+      if (line.oneAtATime) {
+        const n = this.turns[i] ?? 0;
+        this.turns[i] = n + 1;
+        if (line.say.length) out.push(line.say[n % line.say.length]);
+      } else out.push(...line.say);
       this.said.add(i);
-      out.push(...line.say);
     });
     this.lastDistance = s.lapDistance;
     this.lastLap = s.lap;
@@ -241,6 +254,28 @@ export function wentWide(turn: number, offset: number, offRoad: number): boolean
 /** コーナーで、自分がライバルより内側にいるか（インから抜いたかを見る） */
 export function insideOf(turn: number, playerOffset: number, rivalOffset: number): boolean {
   return Math.abs(turn) >= CORNER_TURN && (playerOffset - rivalOffset) * Math.sign(turn) > 0.5;
+}
+
+/**
+ * ライバルがコーナーに入ったとみなす、前後 CORNER_ENTRY_SPAN [m] で向きが変わる量 [rad]（抜けたとみなすのはこの半分を下回ったとき）。
+ * 首都高のゆるく長いカーブも1つのコーナーとして数えられるよう、はみ出しの判定より長い範囲で見る
+ */
+export const CORNER_ENTRY_TURN = 0.4;
+export const CORNER_ENTRY_SPAN = 40;
+
+/** コーナーに入った瞬間だけ true を返す（同じコーナーの中では1回だけ。抜けるまでは出さない） */
+export class CornerWatcher {
+  private inside = false;
+
+  update(turn: number): boolean {
+    const a = Math.abs(turn);
+    if (this.inside) {
+      if (a < CORNER_ENTRY_TURN / 2) this.inside = false;
+      return false;
+    }
+    this.inside = a >= CORNER_ENTRY_TURN;
+    return this.inside;
+  }
 }
 
 /** はみ出した瞬間だけ true を返す（道に戻るまでは何度も出さない） */

@@ -243,7 +243,8 @@ export class RaceHud {
   /**
    * NPC 対戦の結果（順位表）。まだ走っている NPC がいる間は毎フレーム呼んでよい（変わったときだけ描き直す）
    */
-  showStandings(rows: readonly Standing[], totalLaps: number, battle = false, sections?: SectionReport | null): void {
+  /** offTerms: バトルに勝ったが WIN の条件を満たしていないとき、その説明（勝利は記録されない） */
+  showStandings(rows: readonly Standing[], totalLaps: number, battle = false, sections?: SectionReport | null, offTerms?: string | null): void {
     const me = rows.findIndex((r) => r.isPlayer);
     const winner = rows[0]?.total ?? null;
     const body = rows
@@ -259,8 +260,9 @@ export class RaceHud {
       })
       .join('');
     const rival = rows.find((r) => !r.isPlayer)?.name ?? '';
-    const html = `<table class="standings">${body}</table>${sections ? sectionReportHtml(sections.gaps, rival) : ''}`;
-    this.resultTitle.textContent = battle ? (me === 0 ? `勝利！ ${rival} に勝った` : `敗北… ${rival} の勝ち`) : me === 0 ? '優勝！' : `ゴール！ ${me + 1}位`;
+    const off = battle && me === 0 && offTerms ? offTermsHtml(offTerms) : '';
+    const html = `${off}<table class="standings">${body}</table>${sections ? sectionReportHtml(sections.gaps, rival) : ''}`;
+    this.resultTitle.textContent = battle ? (me === 0 ? `${off ? '条件外の勝利！' : '勝利！'} ${rival} に勝った` : `敗北… ${rival} の勝ち`) : me === 0 ? '優勝！' : `ゴール！ ${me + 1}位`;
     if (html !== this.standingsHtml) {
       this.standingsHtml = html;
       this.resultBody.innerHTML = html;
@@ -272,10 +274,10 @@ export class RaceHud {
   }
 
   /** 先行後追いのバトルの結果（1本ごとの引き分け・決着） */
-  showBattleResult(title: string, text: string): void {
+  showBattleResult(title: string, text: string, offTerms?: string | null): void {
     this.resultTitle.textContent = title;
     this.standingsHtml = '';
-    this.resultBody.innerHTML = `<p class="note">${escapeHtml(text)}</p>`;
+    this.resultBody.innerHTML = `${offTerms ? offTermsHtml(offTerms) : ''}<p class="note">${escapeHtml(text)}</p>`;
     this.result.classList.remove('hidden');
   }
 
@@ -283,4 +285,9 @@ export class RaceHud {
     this.standingsHtml = '';
     this.result.classList.add('hidden');
   }
+}
+
+/** 条件外の勝利の説明（WIN として記録されない） */
+function offTermsHtml(offTerms: string): string {
+  return `<p class="off-terms">WIN条件を満たしていないため、記録には残りません（${escapeHtml(offTerms)}）</p>`;
 }

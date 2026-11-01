@@ -27,7 +27,8 @@ describe('rough play', () => {
   const shingo = RIVALS.find((r) => r.id === 'shingo')!;
   const map = MAPS.find((m) => m.id === shingo.course)!;
   const params = VEHICLE_PRESETS.find((v) => v.id === shingo.car)!.params;
-  const player = { level: NPC_LEVELS[0], params };
+  // 慎吾が追いついて並びかけられる、遅めのプレイヤー（初級よりさらに少し遅い）
+  const player = { level: { ...NPC_LEVELS[0], grip: 0.68, brake: 0.62, line: 0.3, topSpeed: 0.85 }, params };
 
   it('only the rivals that play rough can choose it', () => {
     expect(RIVALS.filter((r) => r.rough).map((r) => r.id)).toEqual(['shingo', 'tachi', 'rin']);

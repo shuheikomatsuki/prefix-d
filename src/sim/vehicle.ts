@@ -261,6 +261,21 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     }),
   },
   {
+    id: 'fc3s',
+    label: 'RX-7 (FC3S)',
+    description: 'FR・ロータリーターボ。FDより少し重く非力だが、素直でバランスがよい',
+    params: car(255, {
+      engineAccel: 7,
+      enginePower: 84, // 0-100km/h 5.6秒
+      brakeDecel: 10.9,
+      wheelBase: 2.43,
+      steerRate: 2.8,
+      maxLateralAccel: 9.7,
+      lateralGrip: 10,
+      highSpeedGain: 0,
+    }),
+  },
+  {
     id: 'fd3s',
     label: 'RX-7 (FD3S)',
     description: 'FR・ロータリーターボ。軽くて前後のバランスがよく、速くてよく曲がる',

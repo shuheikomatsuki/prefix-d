@@ -59,6 +59,13 @@ race: [
 - `when` に書いた条件を**すべて**満たしたときに出る。
 - はじめは1回のバトルで1回だけ。`repeat: true` で何度でも出る（場所・出来事以外の条件は、満たさなくなってから再び満たしたとき）。
 - 字幕が出ている間に次のセリフが来たら、順番を待つ。
+- `oneAtATime: true` は、`say` のセリフを1回に1つずつ、書いた順に出す（最後まで出したら最初に戻る。`repeat: true` と一緒に使う）。
+- `onlyWhenQuiet: true` は、ほかの字幕が出ている間は出さない（順番を待たずに、そのときは言わない）。コーナーごとのかけ声などに使う。
+
+```ts
+// コーナーに入るたびに、かけ声を順に1つずつ
+{ when: { event: 'rivalCorner' }, repeat: true, oneAtATime: true, onlyWhenQuiet: true, say: [{ who: 'hoshino', text: 'どりゃー！！' }, { who: 'hoshino', text: 'ふりゃあぁー！' }] },
+```
 
 ## 条件（when）に書けるもの
 
@@ -79,7 +86,7 @@ race: [
 | --- | --- | --- |
 | `at` | スタートラインからこの距離 [m] の場所を通ったとき（周回コースは周ごと） | `1200` |
 | `lap` | 何周目か | `2` |
-| `event` | 出来事: `'overtake'`（自分が抜いた）、`'overtakeInside'`（コーナーでインから抜いた）、`'overtaken'`（抜かれた）、`'crash'`（自分が壁に強くぶつかった）、`'rivalWide'`（ライバルがコーナーで外へはみ出した）、`'rivalBump'`（ラフプレーでライバルにぶつけられた）。配列ならどれかが起きたとき | `'overtaken'`、`['rivalWide', 'overtakeInside']` |
+| `event` | 出来事: `'overtake'`（自分が抜いた）、`'overtakeInside'`（コーナーでインから抜いた）、`'overtaken'`（抜かれた）、`'crash'`（自分が壁に強くぶつかった）、`'rivalWide'`（ライバルがコーナーで外へはみ出した）、`'rivalBump'`（ラフプレーでライバルにぶつけられた）、`'rivalCorner'`（ライバルがコーナーに入った。同じコーナーでは1回）。配列ならどれかが起きたとき | `'overtaken'`、`['rivalWide', 'overtakeInside']` |
 | `position` | 自分がライバルの前（`'ahead'`）か後ろ（`'behind'`）か | `'behind'` |
 | `gap` | 自分とライバルの差 [m] | `{ max: 10 }`、`{ min: 50 }` |
 | `speed` | 自分の速さ [km/h] | `{ min: 150 }` |

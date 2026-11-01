@@ -57,8 +57,8 @@ describe('NPC defending', () => {
 
   it('closes the inside of the corner when a car is right behind', () => {
     const ae86 = VEHICLE_PRESETS.find((v) => v.id === 'ae86')!.params;
-    // a（伝説）が b（上級）の 10m 後ろから追う
-    const chase = (level: (typeof NPC_LEVELS)[number]) => simulateBattle(HAIRPIN_MAP, { level: NPC_LEVELS[4], params: ae86 }, { level, params: ae86 }, 300, 10);
+    // a（超上級）が b（上級）の 10m 後ろから追う
+    const chase = (level: (typeof NPC_LEVELS)[number]) => simulateBattle(HAIRPIN_MAP, { level: NPC_LEVELS[3], params: ae86 }, { level, params: ae86 }, 300, 10);
     const on = chase(NPC_LEVELS[2]);
     const off = chase({ ...NPC_LEVELS[2], defend: false });
     console.log('defend', on.defendSeconds.toFixed(1), 's', on.racers.map((r) => r.timer.laps[0]?.toFixed(2)), 'off', off.racers.map((r) => r.timer.laps[0]?.toFixed(2)));

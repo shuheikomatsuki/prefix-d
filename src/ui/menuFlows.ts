@@ -5,8 +5,9 @@ import { MAPS } from '../map/maps';
 import type { RaceSettings, RaceState } from '../net/protocol';
 import { CarPreview } from '../render/carPreview';
 import { RIVAL_DIALOGUES } from '../race/dialogueScript';
-import { NPC_LEVELS } from '../race/npcDriver';
-import { RIVALS, type Rival, loadBeatenRivals, rivalLevel } from '../race/rivals';
+import { NPC_LEVELS, npcLevelById } from '../race/npcDriver';
+import { RIVALS, type Rival, isRivalUnlocked, loadBeatenRivals, rivalLevel, rivalsToUnlock } from '../race/rivals';
+import { unlockText, winTermsText } from './rivalTerms';
 import { SAFE_SECONDS } from '../race/suddenDeath';
 import type { TimeAttack } from '../race/timeAttack';
 import { VEHICLE_PRESETS, topSpeedOf } from '../sim/vehicle';
@@ -96,7 +97,7 @@ export function createGameMenu(c: MenuContext): { menu: GameMenu; openChangeFlow
   const draftMap = () => MAPS.find((m) => m.id === draft.map) ?? MAPS[0];
   const draftCar = () => VEHICLE_PRESETS.find((v) => v.id === draft.car) ?? VEHICLE_PRESETS[0];
   const draftRival = () => RIVALS.find((r) => r.id === draft.rival) ?? RIVALS[0];
-  const draftNpc = () => NPC_LEVELS.find((l) => l.id === draft.npc) ?? NPC_LEVELS[0];
+  const draftNpc = () => npcLevelById(draft.npc) ?? NPC_LEVELS[0];
   /** 車の見た目（メニューの右側で回して見せる） */
   const carPreview = new CarPreview();
   /** 選び始めたときの時間帯・天気（得意な条件のないライバルに選び直したら、これに戻す） */
@@ -185,12 +186,16 @@ export function createGameMenu(c: MenuContext): { menu: GameMenu; openChangeFlow
       {
         choices: () => {
           const beaten = loadBeatenRivals();
-          return RIVALS.map((r) => ({
-            id: r.id,
-            label: r.name,
-            badge: beaten.has(r.id) ? 'WIN' : undefined,
-            note: `${carLabel(r.car)}・${rivalLevel(r).label}`,
-          }));
+          return RIVALS.map((r) => {
+            const locked = !isRivalUnlocked(r, beaten);
+            return {
+              id: r.id,
+              label: r.name,
+              badge: locked ? 'LOCK' : beaten.has(r.id) ? 'WIN' : undefined,
+              note: `${carLabel(r.car)}・${rivalLevel(r).label}`,
+              locked,
+            };
+          });
         },
         selected: () => draft.rival,
         select: (id) => {
@@ -201,7 +206,20 @@ export function createGameMenu(c: MenuContext): { menu: GameMenu; openChangeFlow
     ],
     detail: () => {
       const r = draftRival();
-      return rivalDetail(r, rivalLevel(r), { car: carLabel(r.car), course: [mapLabel(r.course), rivalConditionsLabel(r)].filter(Boolean).join('・'), beaten: loadBeatenRivals().has(r.id) }, carPreview);
+      const beaten = loadBeatenRivals();
+      const remaining = rivalsToUnlock(r, beaten);
+      return rivalDetail(
+        r,
+        rivalLevel(r),
+        {
+          car: carLabel(r.car),
+          course: [mapLabel(r.course), rivalConditionsLabel(r)].filter(Boolean).join('・'),
+          beaten: beaten.has(r.id),
+          winTerms: winTermsText(r, mapLabel),
+          unlock: remaining.length ? unlockText(r, remaining) : null,
+        },
+        carPreview,
+      );
     },
   };
   const ruleGroup: MenuGroup = {

@@ -896,6 +896,27 @@ body.touch .title-press .tap {
   transform: skewX(-12deg);
 }
 
+/* まだ解放されていないライバルの説明 */
+.d-lock {
+  margin: 8px 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: #ffd27a;
+  background: rgba(0, 0, 0, 0.35);
+  border-left: 3px solid #ffd27a;
+}
+
+/* まだ解放されていない選択肢（ライバル） */
+#menu .choice.locked .label,
+#menu .choice.locked small {
+  opacity: 0.45;
+}
+
+#menu .choice.locked .badge {
+  color: #fff;
+  background: #555;
+}
+
 /* トップ画面のプレイモードは大きく、番号を付ける */
 #menu .item.major {
   padding: 16px 40px 16px 18px;
@@ -1520,6 +1541,12 @@ body.touch .menu-keys {
   50% {
     filter: brightness(1.18);
   }
+}
+
+#menu .go:disabled {
+  opacity: 0.35;
+  animation: none;
+  cursor: not-allowed;
 }
 
 /* 大きな画面では、文字をさらに大きく */
@@ -3878,4 +3905,14 @@ body.touch #net-status .ns-names {
   margin: 4px 0;
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* 条件外の勝利（WIN として記録されない）の説明 */
+.off-terms {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: #ffd27a;
+  background: rgba(0, 0, 0, 0.35);
+  border-left: 3px solid #ffd27a;
 }
