@@ -41,7 +41,7 @@ export const RIVALS: readonly Rival[] = [
   { id: 'iketani', name: '池谷浩一郎', team: '秋名スピードスターズ', car: 's13', course: 'pass-up', level: 'easy', bio: '秋名スピードスターズのリーダー。走りより、真子とのデートに大遅刻した切ない恋の話のほうが語り草。' },
   { id: 'kenta', name: '中村賢太', team: '赤城レッドサンズ', car: 's14', course: 'pass-over-r', conditions: { time: 'night', weather: 'rain' }, level: 'normal', bio: '高橋啓介を「啓介さん」と慕う赤城レッドサンズの若手。S14で雨の夜の峠に挑む。' },
   { id: 'shingo', name: '庄司慎吾', team: '妙義ナイトキッズ', car: 'eg6', course: 'uturn', level: 'normal', rough: { duration: 3, cooldown: 7, push: 6, spin: 2 }, bio: '勝つためならぶつけることも辞さない妙義ナイトキッズのダーティーな走り屋。右手をハンドルに縛るガムテープデスマッチで知られる。' },
-  { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'long-r', level: 'hard', bio: '「GT-Rこそ最強」と信じる妙義ナイトキッズのリーダー。肝心なところでアンダーステアを出す。' },
+  { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'myogi-up', level: 'hard', bio: '「GT-Rこそ最強」と信じる妙義ナイトキッズのリーダー。肝心なところでアンダーステアを出す。' },
   { id: 'iwaki', name: '岩城清次', team: 'チームエンペラー', car: 'evo', course: 'iroha-up', level: 'hard', bio: 'ランエボIVで4WDのトラクションを武器にするチームエンペラーのナンバー2。負けたあとに京一から受けるビンタまでがお約束。' },
   { id: 'sakamoto', name: '坂本', team: '埼玉北西エリア連合', car: 'cappuccino', course: 'steep-down', conditions: { time: 'night', weather: 'rain' }, level: 'hard', bio: '埼玉北西エリア連合のカプチーノ使い。軽さを武器にした下りの速さは、軽自動車だと侮ると痛い目を見る。' },
   { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'valley-up', level: 'hard', bio: '黄色いFDを駆る赤城レッドサンズのナンバー2で、のちのプロジェクトDのヒルクライム担当。何かにつけて口にするのは「アニキ」。' },

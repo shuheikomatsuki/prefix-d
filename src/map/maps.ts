@@ -900,6 +900,71 @@ export const AKINA_DOWN_MAP = roadMap('akina-down', '秋名（ダウンヒル）
   ],
 });
 
+/**
+ * 妙義（妙義山）のヒルクライム（約 3.5km・高低差 240m）。ふもとの妙義神社の前から、ギザギザの岩の峰の裾をぬって
+ * 中之嶽神社へ上る。妙義ナイトキッズのホームコース。実際の道の形のデータは使っておらず、
+ * 原作・アニメ・アーケードで知られる雰囲気（狭く荒れた道、中低速の連続コーナー、パワーが物を言う上りのストレート）を再現している:
+ *
+ * - スタート直後: ふもとの緩い上りの中速コーナー
+ * - 道幅が狭くなり、路面が荒れた中低速の連続コーナー
+ * - 中盤の上りのストレート（GT-R のようなパワーのある車が離しにかかる）
+ * - 岩の崖が道路のすぐ脇まで迫る、見通しの悪いつづら折り（左右交互のヘアピン 4 個）
+ * - 頂上の手前の高速の左右から、中之嶽神社の前でゴール
+ */
+const MYOGI_UP_ROAD: RoadSpec = {
+  scenery: 'touge',
+  width: 8,
+  start: 50,
+  pieces: [
+    // ふもと（妙義神社の前）: 緩い上りの中速コーナー
+    { straight: 180, h: 0 },
+    { arc: { radius: 90, turn: 45 } },
+    { straight: 110 },
+    { arc: { radius: 55, turn: -75 } },
+    { straight: 90 },
+    { arc: { radius: 70, turn: 60 } },
+    { straight: 120, h: 30 },
+    // 狭く荒れた中低速の連続コーナー
+    { arc: { radius: 35, turn: -100 }, width: 7, bumpy: true },
+    { straight: 60, width: 7, bumpy: true },
+    { arc: { radius: 28, turn: 120 }, width: 7, bumpy: true },
+    { straight: 50, width: 7, bumpy: true },
+    { arc: { radius: 45, turn: -80 }, width: 7, bumpy: true },
+    { arc: { radius: 40, turn: 90 }, width: 7, bumpy: true },
+    { straight: 70, width: 7, bumpy: true },
+    { arc: { radius: 22, turn: -150 }, width: 7, bumpy: true },
+    { straight: 80, width: 7, bumpy: true, h: 85 },
+    { arc: { radius: 60, turn: 70 } },
+    // 中盤の上りのストレート
+    { straight: 420, h: 135 },
+    { arc: { radius: 120, turn: -30 } },
+    { straight: 100 },
+    // 岩の崖が迫る、見通しの悪いヘアピンの連続（左右交互のつづら折り）
+    ...switchbacks(
+      [
+        [150, 18, 30],
+        [135, 17, 33],
+        [150, 19, 28],
+        [130, 17, 31],
+      ],
+      1,
+      false,
+    ),
+    { straight: 110, h: 205 },
+    // 頂上の手前の高速の左右
+    { arc: { radius: 140, turn: -40 } },
+    { straight: 120 },
+    { arc: { radius: 130, turn: 45 } },
+    { straight: 90 },
+    { arc: { radius: 50, turn: -85 } },
+    // 中之嶽神社の前でゴール
+    { straight: 200, h: 240 },
+  ],
+};
+
+/** 妙義を上る。中盤の上りのストレートと、岩の崖が迫るヘアピンの連続 */
+export const MYOGI_UP_MAP = roadMap('myogi-up', '妙義（ヒルクライム）', MYOGI_UP_ROAD);
+
 export const MAPS: readonly MapDefinition[] = [
   TOWN_MAP,
   SCHOOL_MAP,
@@ -920,6 +985,7 @@ export const MAPS: readonly MapDefinition[] = [
   VALLEY_DOWN_MAP,
   HAPPOGAHARA_MAP,
   AKINA_DOWN_MAP,
+  MYOGI_UP_MAP,
 ];
 
 /**
