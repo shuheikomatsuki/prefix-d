@@ -4285,3 +4285,79 @@ body.touch #replay kbd {
     display: none;
   }
 }
+
+/* ---- ハンドルのメーター（速度の上）: いまの切れ角と、曲がれる限界の帯 ---- */
+#steer-meter {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  width: 180px;
+  font-size: 12px;
+  text-align: center;
+}
+
+#steer-meter.hidden {
+  display: none;
+}
+
+#steer-meter .sm-track {
+  position: relative;
+  height: 10px;
+  background: rgba(10, 11, 14, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+#steer-meter .sm-track i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+/* 曲がれる限界（この内側ならアンダーにならない） */
+#steer-meter .sm-zone {
+  background: rgba(95, 224, 138, 0.28);
+  box-shadow:
+    inset 2px 0 0 #5fe08a,
+    inset -2px 0 0 #5fe08a;
+}
+
+#steer-meter .sm-fill {
+  background: #fff;
+}
+
+#steer-meter.over .sm-fill {
+  background: var(--accent-2);
+}
+
+#steer-meter .sm-center {
+  left: calc(50% - 1px);
+  width: 2px;
+  top: -3px;
+  bottom: -3px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+#steer-meter .sm-text {
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+#steer-meter.over .sm-text {
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
+/* スマホの横向きは速度が下の真ん中なので、メーターも真ん中に */
+body.touch #steer-meter {
+  right: auto;
+  left: 50%;
+  width: 150px;
+  transform: translateX(-50%);
+}
+
+@media (orientation: portrait) {
+  body.touch #steer-meter {
+    left: 0;
+    transform: none;
+  }
+}

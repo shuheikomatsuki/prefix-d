@@ -31,6 +31,25 @@ export function loadSmoothKeySteer(): boolean {
   }
 }
 
+const SPEED_STEER_KEY = 'car-game:key-steer-speed';
+
+/** キーボードのハンドルを速さに合わせるか（保存した設定。最初は true） */
+export function loadSpeedKeySteer(): boolean {
+  try {
+    return localStorage.getItem(SPEED_STEER_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function saveSpeedKeySteer(on: boolean): void {
+  try {
+    localStorage.setItem(SPEED_STEER_KEY, on ? 'on' : 'off');
+  } catch {
+    // 保存できなくても、このページを開いている間は効く
+  }
+}
+
 export function saveSmoothKeySteer(on: boolean): void {
   try {
     localStorage.setItem(SMOOTH_STEER_KEY, on ? 'on' : 'off');
@@ -50,6 +69,8 @@ export class KeyboardInput {
   private rightSince: number | null = null;
   /** 押した瞬間は少しだけ切り、押し続けるほど深く切る */
   smoothSteer = true;
+  /** 押し続けても、速さで決まるグリップの限界の少し先までしか切らない（keySteerLimit。かけるのは呼ぶ側） */
+  speedSteer = true;
 
   constructor(
     target: Window = window,

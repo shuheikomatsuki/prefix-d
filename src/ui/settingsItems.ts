@@ -1,6 +1,6 @@
 import type { BgmPlayer } from '../audio/bgm';
 import type { SoundSystem } from '../audio/sound';
-import { type KeyboardInput, saveSmoothKeySteer } from '../core/input';
+import { type KeyboardInput, saveSmoothKeySteer, saveSpeedKeySteer } from '../core/input';
 import { MAX_EMOTE_LENGTH } from '../net/protocol';
 import type { CameraRig } from '../render/camera';
 import { MIRROR_MODES, type Mirrors, saveMirrorMode } from '../render/mirrors';
@@ -9,6 +9,7 @@ import type { MenuItem } from './menu';
 import type { Minimap } from './minimap';
 import { MINIMAP_MODES, saveMinimapMode } from './minimapView';
 import { textDetail } from './menuDetails';
+import type { SteerMeter } from './steerMeter';
 import type { TouchControls } from './touchControls';
 
 /** 設定の項目の右側の説明 */
@@ -22,6 +23,7 @@ export interface SettingsContext {
   bgm: BgmPlayer;
   touch: TouchControls;
   keyboard: KeyboardInput;
+  steerMeter: SteerMeter;
   cycleCamera: () => void;
   toggleMute: () => void;
   toggleSteerMode: () => void;
@@ -89,16 +91,37 @@ export function settingItems(c: SettingsContext): MenuItem[] {
     },
     {
       label: () => 'キーのハンドル',
-      value: () => (c.keyboard.smoothSteer ? 'なめらか' : 'すぐ全開'),
+      value: () => (c.keyboard.speedSteer ? '速さに合わせる' : c.keyboard.smoothSteer ? 'なめらか' : 'すぐ全開'),
       run: () => {
-        c.keyboard.smoothSteer = !c.keyboard.smoothSteer;
-        saveSmoothKeySteer(c.keyboard.smoothSteer);
+        // 速さに合わせる → なめらか → すぐ全開 → 速さに合わせる
+        const k = c.keyboard;
+        if (k.speedSteer) k.speedSteer = false;
+        else if (k.smoothSteer) k.smoothSteer = false;
+        else {
+          k.speedSteer = true;
+          k.smoothSteer = true;
+        }
+        saveSpeedKeySteer(k.speedSteer);
+        saveSmoothKeySteer(k.smoothSteer);
       },
       visible: () => !c.touch.isShown,
       detail: settingDetail('キーのハンドル（キーボード）', [
-        'なめらか: 軽く叩くと少しだけ切れ、押し続けるほど深く切れる。細かい修正がしやすい。',
+        '速さに合わせる: なめらかに加えて、押し続けても、その速さでタイヤが曲がれる限界の少し先までしか切らない。軽く叩けば限界の内側、押し続ければ少しだけアンダー。低速のヘアピンでは目いっぱい切れる。',
+        'なめらか: 軽く叩くと少しだけ切れ、押し続けるほど深く切れる。高速で押し続けると限界を大きく超えてアンダーになる。',
         'すぐ全開: 押した瞬間から目いっぱい切る（前の操作感）。',
         'コントローラーやスマホの操作には関係しません。',
+      ]),
+    },
+    {
+      label: () => 'ハンドルの表示',
+      value: () => (c.steerMeter.shown ? 'ON' : 'OFF'),
+      run: () => {
+        c.steerMeter.shown = !c.steerMeter.shown;
+      },
+      detail: settingDetail('ハンドルの表示', [
+        '速度の上に、いまハンドルをどれだけ切っているか（「左 12%」。目いっぱいが 100%）を出す。',
+        '明るい帯は、その速さでタイヤが曲がれる限界。帯より外まで切るとアンダーステアになる。少しはみ出すくらいならほとんど損はなく、大きくはみ出すとバーがオレンジに変わる。',
+        '速いほど帯は狭くなり、ブレーキを踏んでいる間も狭くなる。小さな角度が見やすいよう、真ん中ほど目盛りを広げている。',
       ]),
     },
     {
