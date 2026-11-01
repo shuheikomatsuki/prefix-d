@@ -1,3 +1,4 @@
+import { ROAD_ORIGIN, type RoadPiece, closeLoop } from './road';
 import type { MapDefinition } from './tilemap';
 
 /**
@@ -262,4 +263,68 @@ export const VALLEY_UP_MAP: MapDefinition = {
   guardrails: true,
   race: { laps: 1 },
   elevation: VALLEY_ELEVATION,
+};
+
+/** 前の首都高の最後: 215° ほど曲がり続ける大きなカーブでロングストレートに戻る（周回が閉じる長さを計算する） */
+function closeStackedLoop(pieces: RoadPiece[]): RoadPiece[] {
+  const out = closeLoop(ROAD_ORIGIN, pieces, 200, 1);
+  out[out.length - 1] = { ...out[out.length - 1], h: 0 };
+  return out;
+}
+
+/**
+ * 前の首都高（湾岸線・ループ）。ゲームのコースは都心環状線のような形に作り直したが、自分の上を重なって回る
+ * 二重のループ・吊り橋・海のある高架の道路を確かめるために残しておく。高架の周回コース（約 5.9km）。中心線で描く道路（src/map/road.ts）なので、
+ * カーブはなめらかな円で、道路が自分の上を越える立体交差がある。
+ *
+ * 湾岸線のような 1.3km のロングストレートの先で、左に 540° 回りながら上る二重のループ（下の輪の真上を
+ * 上の輪が通る）、海を渡る吊り橋（レインボーブリッジ）、都心環状線のような曲がりくねった区間、
+ * 405° 回って自分の上を越えていくループ、200° あまり曲がり続ける大きなカーブを通ってロングストレートに戻る。
+ * 道路の両側は壁で、3車線
+ */
+export const STACKED_LOOP_MAP: MapDefinition = {
+  id: 'shutoko-loop-2',
+  name: '首都高（湾岸線・ループ）',
+  tileSize: 20,
+  roadWidth: 11,
+  layout: [],
+  start: { col: 0, row: 0, heading: 'E' },
+  race: { laps: 1 },
+  road: {
+    scenery: 'highway',
+    highway: { ground: -14, lanes: 3 },
+    width: 11,
+    start: 100,
+    closed: true,
+    pieces: closeStackedLoop([
+      // 湾岸線のロングストレート
+      { straight: 1300 },
+      { arc: { radius: 500, turn: -20 } },
+      { straight: 200, h: 0 },
+      // 左に 540° 回りながら上る二重のループ
+      { arc: { radius: 65, turn: 540 }, width: 10, h: 16 },
+      { straight: 250, h: 22 },
+      // レインボーブリッジ
+      { straight: 120, h: 24 },
+      { straight: 620, suspension: true, h: 26 },
+      { straight: 150, h: 16 },
+      // 都心環状線のような曲がりくねった区間（百数十キロで曲がれるくらいの半径）
+      { arc: { radius: 90, turn: 70 }, width: 9 },
+      { straight: 100, width: 9 },
+      { arc: { radius: 80, turn: -90 }, width: 9 },
+      { straight: 60, width: 9 },
+      { arc: { radius: 100, turn: 80 }, width: 9 },
+      { arc: { radius: 80, turn: -60 }, width: 9, h: 6 },
+      { straight: 150, width: 9, h: 6 },
+      // 405° 回って、自分の上を越えていくループ
+      { arc: { radius: 60, turn: 405 }, width: 9, h: 18 },
+      { straight: 200, width: 10, h: 8 },
+      { arc: { radius: 90, turn: -60 } },
+    ]),
+    // 東京湾（北側）と、吊り橋の下の運河
+    sea: [
+      [-900, -1400, 2100, -470],
+      [880, -470, 1500, -45],
+    ],
+  },
 };

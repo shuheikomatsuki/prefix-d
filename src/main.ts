@@ -1177,6 +1177,7 @@ async function main() {
     settings: settingItems({
       cameraRig,
       mirrors,
+      minimap,
       sound,
       bgm,
       touch,

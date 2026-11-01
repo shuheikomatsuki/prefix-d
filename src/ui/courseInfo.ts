@@ -107,7 +107,7 @@ export interface CourseNote {
 export const COURSE_NOTES: Record<string, CourseNote> = {
   town: { text: '最初の練習用の小さな街。交差点と標識のある道を、のんびり走れる', cars: ['standard', 'kei'] },
   school: { text: '教習所のような練習コース。S字・クランク風の連続カーブと交差点', cars: ['kei', 'standard'] },
-  'shutoko-loop-2': { text: '高架の3車線。1.3kmの湾岸線、540°の二重ループ、海を渡る吊り橋。両側は壁', cars: ['r34', 'gtr'] },
+  'shutoko-c1': { text: '都心環状線のような高架の2車線。長い直線はなく、江戸橋・谷町・浜崎橋のきつい左とS字、千代田トンネル。両側は壁', cars: ['fd3s', 'evo'] },
   'pass-up': { text: '頂上まで150m上る。高速コーナー、S字、3つのヘアピン', cars: ['fd3s', 'evo'] },
   'pass-down': { text: '同じ峠を頂上から下る。スピードが乗るので早めのブレーキが大事', cars: ['fd3s', 'ae86'] },
   'pass-over-r': { text: '100mあまり上って峠を越え、反対側へ下る。頂上は見通しのよい高速の左右', cars: ['fd3s', 'evo'] },

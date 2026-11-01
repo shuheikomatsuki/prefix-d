@@ -47,7 +47,7 @@ export const RIVALS: readonly Rival[] = [
   { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'valley-up', level: 'hard', bio: '黄色いFDを駆る赤城レッドサンズのナンバー2で、のちのプロジェクトDのヒルクライム担当。何かにつけて口にするのは「アニキ」。' },
   { id: 'sudo', name: '須藤京一', team: 'チームエンペラー', car: 'evo3', course: 'iroha-down', level: 'hard', bio: '群馬の走り屋を見下すチームエンペラーのリーダー。副業でラーメン屋を営んでいて、負けた部下にはビンタ。' },
   { id: 'ryosuke', name: '高橋涼介', team: '赤城レッドサンズ', car: 'fc3s', course: 'valley-down', conditions: { time: 'night', weather: 'clear' }, level: 'legend', bio: '「赤城の白い彗星」と呼ばれる赤城レッドサンズのリーダーで、啓介の兄。白いFCで、理論に裏打ちされた隙のない走りを見せる。' },
-  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'shutoko-loop-2', level: 'legend', bio: '「ゴッドフット」の異名を持つパープルシャドウのGT-R使い。「ゴッドアーム」城島と並ぶ伝説で、年季の違うアクセルワークを見せつける。' },
+  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'shutoko-c1', level: 'legend', bio: '「ゴッドフット」の異名を持つパープルシャドウのGT-R使い。「ゴッドアーム」城島と並ぶ伝説で、年季の違うアクセルワークを見せつける。' },
   { id: 'tachi', name: '舘智幸', team: 'プロレーサー', car: 'ek9', course: 'happogahara', level: 'legend', rough: { duration: 2.5, cooldown: 10, push: 2.5, spin: 0.7, upset: 0.4, side: 1.4, reach: 3.6 }, roughNote: '軽く当ててくる', roughHow: '後ろからコーナーの内側へ入り、軽く当てて姿勢を崩してくる。スピンするほどではないが、乱されたら立て直して', bio: '元走り屋のプロレーサーで、EK9シビックを操る。「プロとアマの差」を見せつけるためなら、軽く当てて相手を崩すこともためらわない。' },
   { id: 'rin', name: '北条凛', team: '死神', car: 'gtr', course: 'marathon', level: 'legend', rough: { duration: 3, cooldown: 9, push: 6, spin: 1.6 }, bio: '最愛の人を失い「死神」と呼ばれるようになった黒いGT-Rの男。相手を道連れにするような危険な走りで迫ってくる。' },
   { id: 'takumi', name: '藤原拓海', team: '藤原とうふ店', car: 'ae86', course: 'akina-down', level: 'legend', bio: '豆腐の配達で毎朝秋名を下るうちに腕を磨いた、とうふ屋のハチロク。紙コップの水をこぼさない走りと溝落としが代名詞。' },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { HAPPOGAHARA_MAP, SHUTOKO_MAP } from './maps';
+import { HAPPOGAHARA_MAP } from './maps';
+import { STACKED_LOOP_MAP } from './testMaps';
 import { guardrailAt, walledAt } from './roadObstacles';
 import {
   FLAG_BRIDGE,
@@ -127,7 +128,7 @@ describe('grade-separated crossings', () => {
   });
 
   it('stacks the 540 degree loop of the highway with room for the cars below', () => {
-    const road = buildRoad(SHUTOKO_MAP.road!);
+    const road = buildRoad(STACKED_LOOP_MAP.road!);
     expect(crossingClearance(road)).toBeGreaterThan(8);
     // 同じ向きに続けて曲がる角度の最大
     let best = 0;
@@ -147,7 +148,7 @@ describe('grade-separated crossings', () => {
   });
 
   it('puts the walls of the upper road on their own layer so that cars below pass under them', () => {
-    const road = buildRoad(SHUTOKO_MAP.road!);
+    const road = buildRoad(STACKED_LOOP_MAP.road!);
     const boxes = buildRoadObstacles(road).boxes;
     expect(boxes.some((b) => b.layer === LAYER_UPPER)).toBe(true);
     expect(boxes.some((b) => b.layer === LAYER_LOWER)).toBe(true);

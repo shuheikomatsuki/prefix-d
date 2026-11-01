@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { HAPPOGAHARA_MAP, SHUTOKO_MAP } from '../map/maps';
+import { HAPPOGAHARA_MAP } from '../map/maps';
+import { STACKED_LOOP_MAP } from '../map/testMaps';
 import { buildRoad } from '../map/road';
 import { parseMap } from '../map/tilemap';
 import { type RoadCourse, buildRoadCourse } from './roadCourse';
@@ -79,7 +80,7 @@ describe('out-and-back course', () => {
 });
 
 describe('closed course with loops over itself', () => {
-  const c = course(SHUTOKO_MAP);
+  const c = course(STACKED_LOOP_MAP);
 
   it('counts laps by following the course across the crossings', () => {
     const race = new TimeAttack(c, 2);

@@ -271,12 +271,34 @@ export const UTURN_MAP = roadMap('uturn', '峠（Uターン）', {
   pieces: [...UTURN_OUT, { arc: { radius: 19, turn: 180 }, h: 85 }, ...alongside(UTURN_OUT, 38, 1)],
 });
 
+/** ヘアピンのすぐ前後に残す直線の長さ [m]（ヘアピンの内側の近道の帯が、この直線にはさまれる） */
+const HAIRPIN_STRAIGHT = 25;
+
 /**
- * ヘアピンが左右交互に続くつづら折り。legs は [ヘアピンの手前の直線の長さ, ヘアピンの半径] の並び。
- * 最初のヘアピンが first の向き（1 = 左、-1 = 右）に回る。ヘアピンの前後はどれも直線
+ * ヘアピンが左右交互に続くつづら折り。legs は [ヘアピンの手前の区間の長さ, ヘアピンの半径, 軽いカーブの角度] の並び。
+ * 最初のヘアピンが first の向き（1 = 左、-1 = 右）に回る。
+ *
+ * 軽いカーブの角度 [度] を書いた区間は、ヘアピンの前後の直線（HAIRPIN_STRAIGHT）を残して、その間を
+ * 左右にゆるく弓なりに曲げる（+角度・-2×角度・+角度 の円弧で、向きは元に戻る）。隣り合う区間がぶつからないよう、
+ * 弓のふくらむ向きは地図の上でそろえる（行きと帰りで曲がる向きが逆になる）
  */
-function switchbacks(legs: readonly (readonly [number, number])[], first: 1 | -1): RoadPiece[] {
-  return legs.flatMap(([leg, radius], i): RoadPiece[] => [{ straight: leg }, { arc: { radius, turn: (i % 2 === 0 ? 180 : -180) * first } }]);
+function switchbacks(legs: readonly (readonly [number, number, number?])[], first: 1 | -1): RoadPiece[] {
+  return legs.flatMap(([leg, radius, bow], i): RoadPiece[] => {
+    const hairpin: RoadPiece = { arc: { radius, turn: (i % 2 === 0 ? 180 : -180) * first } };
+    if (!bow) return [{ straight: leg }, hairpin];
+    const rest = leg - 2 * HAIRPIN_STRAIGHT;
+    const angle = (Math.abs(bow) * Math.PI) / 180;
+    const r = rest / (4 * angle);
+    const turn = bow * (i % 2 === 0 ? 1 : -1);
+    return [
+      { straight: HAIRPIN_STRAIGHT },
+      { arc: { radius: r, turn } },
+      { arc: { radius: r, turn: -2 * turn } },
+      { arc: { radius: r, turn } },
+      { straight: HAIRPIN_STRAIGHT },
+      hairpin,
+    ];
+  });
 }
 
 /**
@@ -312,15 +334,15 @@ const IROHA_DOWN_ROAD: RoadSpec = {
     // 上側のつづら折り
     ...switchbacks(
       [
-        [140, 16],
+        [140, 16, 15],
         [125, 15],
-        [135, 17],
-        [115, 15],
+        [135, 17, 13],
+        [115, 15, 11],
         [130, 16],
-        [110, 15],
-        [125, 17],
+        [110, 15, 12],
+        [125, 17, 15],
         [105, 15],
-        [120, 16],
+        [120, 16, 13],
       ],
       -1,
     ),
@@ -333,13 +355,13 @@ const IROHA_DOWN_ROAD: RoadSpec = {
     // 下側のつづら折り
     ...switchbacks(
       [
-        [130, 15],
+        [130, 15, -13],
         [120, 16],
-        [130, 15],
-        [110, 17],
+        [130, 15, -15],
+        [110, 17, -11],
         [125, 15],
-        [105, 16],
-        [120, 15],
+        [105, 16, -12],
+        [120, 15, -14],
         [110, 18],
       ],
       -1,
@@ -395,17 +417,17 @@ const IROHA_UP_ROAD: RoadSpec = {
     // 斜面のつづら折り
     ...switchbacks(
       [
-        [240, 20],
-        [225, 19],
+        [240, 20, 14],
+        [225, 19, 10],
         [250, 21],
-        [220, 19],
-        [235, 20],
+        [220, 19, 12],
+        [235, 20, 8],
         [215, 19],
-        [240, 21],
-        [210, 19],
+        [240, 21, 15],
+        [210, 19, 10],
         [230, 20],
-        [220, 19],
-        [225, 21],
+        [220, 19, 12],
+        [225, 21, 9],
         [210, 20],
       ],
       1,
@@ -544,66 +566,89 @@ export const MARATHON_MAP = roadMap('marathon', '峠（超ロング）', {
   ],
 });
 
-/** 首都高の最後: 215° ほど曲がり続ける大きなカーブでロングストレートに戻る（周回が閉じる長さを計算する） */
-function closeShutoko(pieces: RoadPiece[]): RoadPiece[] {
-  const out = closeLoop(ROAD_ORIGIN, pieces, 200, 1);
-  out[out.length - 1] = { ...out[out.length - 1], h: 0 };
-  return out;
-}
-
 /**
- * 首都高のような高架の周回コース（オリジナル・約 5.9km）。中心線で描く道路（src/map/road.ts）なので、
- * カーブはなめらかな円で、道路が自分の上を越える立体交差がある。
+ * 首都高・都心環状線のような、高架の周回コース（オリジナル・約 5km・2 車線）。実際の道の形のデータは使っておらず、
+ * 都心環状線の名所の並び（内回り）をなぞって作った:
  *
- * 湾岸線のような 1.3km のロングストレートの先で、左に 540° 回りながら上る二重のループ（下の輪の真上を
- * 上の輪が通る）、海を渡る吊り橋（レインボーブリッジ）、都心環状線のような曲がりくねった区間、
- * 405° 回って自分の上を越えていくループ、200° あまり曲がり続ける大きなカーブを通ってロングストレートに戻る。
- * 道路の両側は壁で、3車線
+ * - 京橋から日本橋川の上へ。江戸橋 JCT のきつい左
+ * - 神田橋〜竹橋: 半径 50m ほどの S 字が続く
+ * - 北の丸の下の千代田トンネル
+ * - 三宅坂〜霞が関の中速コーナー、谷町 JCT のきつい左
+ * - 一ノ橋〜芝公園の中速区間、浜崎橋 JCT のきつい左から汐留を抜けて京橋へ戻る
+ *
+ * 長い直線はなく、道幅の狭い 2 車線で、両側は壁
  */
+const C1_PIECES: RoadPiece[] = [
+  // 京橋〜江戸橋 JCT（日本橋川の上）
+  { straight: 120, h: 0 },
+  { arc: { radius: 90, turn: 30 } },
+  { straight: 120 },
+  { arc: { radius: 45, turn: 80 }, h: 4 },
+  { straight: 180 },
+  { arc: { radius: 70, turn: -40 } },
+  { straight: 120, h: 6 },
+  // 神田橋〜竹橋の S 字
+  { arc: { radius: 50, turn: -60 } },
+  { straight: 70 },
+  { arc: { radius: 45, turn: 95 } },
+  { straight: 60 },
+  { arc: { radius: 55, turn: -50 }, h: 2 },
+  { straight: 100 },
+  { arc: { radius: 80, turn: 55 }, h: -4 },
+  // 北の丸の下の千代田トンネル
+  { arc: { radius: 150, turn: 30 }, tunnel: true, h: -8 },
+  { straight: 280, tunnel: true },
+  { arc: { radius: 160, turn: -20 }, tunnel: true, h: -6 },
+  { straight: 80, h: 0 },
+  { arc: { radius: 70, turn: 25 } },
+  // 三宅坂〜霞が関、谷町 JCT
+  { straight: 150 },
+  { arc: { radius: 55, turn: 60 } },
+  { straight: 200, h: 4 },
+  { arc: { radius: 80, turn: -40 } },
+  { straight: 120, h: 6 },
+  { arc: { radius: 38, turn: 105 }, h: 8 },
+  { straight: 120 },
+  { arc: { radius: 60, turn: -50 } },
+  // 一ノ橋〜芝公園
+  { straight: 330, h: 4 },
+  { arc: { radius: 70, turn: 50 } },
+  { straight: 160 },
+  { arc: { radius: 65, turn: -40 }, h: 2 },
+  { straight: 220 },
+  { arc: { radius: 90, turn: 40 } },
+  { straight: 100 },
+  // 浜崎橋 JCT のきつい左、汐留の S 字
+  { arc: { radius: 42, turn: 90 }, h: 0 },
+  { straight: 120 },
+  { arc: { radius: 70, turn: -35 } },
+  { straight: 80 },
+  { arc: { radius: 60, turn: 50 } },
+  { straight: 90 },
+  { arc: { radius: 80, turn: -40 } },
+  { straight: 60 },
+];
+
 export const SHUTOKO_MAP: MapDefinition = {
-  // 形を変えたので id も変えた（前の形のタイム・ゴーストと混ざらないように）
-  id: 'shutoko-loop-2',
-  name: '首都高（湾岸線・ループ）',
+  id: 'shutoko-c1',
+  name: '首都高（都心環状線）',
   tileSize: 20,
-  roadWidth: 11,
+  roadWidth: 9,
   layout: [],
   start: { col: 0, row: 0, heading: 'E' },
   race: { laps: 1 },
   road: {
     scenery: 'highway',
-    highway: { ground: -14, lanes: 3 },
-    width: 11,
+    highway: { ground: -14, lanes: 2 },
+    width: 9,
     start: 100,
     closed: true,
-    pieces: closeShutoko([
-      // 湾岸線のロングストレート
-      { straight: 1300 },
-      { arc: { radius: 500, turn: -20 } },
-      { straight: 200, h: 0 },
-      // 左に 540° 回りながら上る二重のループ
-      { arc: { radius: 65, turn: 540 }, width: 10, h: 16 },
-      { straight: 250, h: 22 },
-      // レインボーブリッジ
-      { straight: 120, h: 24 },
-      { straight: 620, suspension: true, h: 26 },
-      { straight: 150, h: 16 },
-      // 都心環状線のような曲がりくねった区間（百数十キロで曲がれるくらいの半径）
-      { arc: { radius: 90, turn: 70 }, width: 9 },
-      { straight: 100, width: 9 },
-      { arc: { radius: 80, turn: -90 }, width: 9 },
-      { straight: 60, width: 9 },
-      { arc: { radius: 100, turn: 80 }, width: 9 },
-      { arc: { radius: 80, turn: -60 }, width: 9, h: 6 },
-      { straight: 150, width: 9, h: 6 },
-      // 405° 回って、自分の上を越えていくループ
-      { arc: { radius: 60, turn: 405 }, width: 9, h: 18 },
-      { straight: 200, width: 10, h: 8 },
-      { arc: { radius: 90, turn: -60 } },
-    ]),
-    // 東京湾（北側）と、吊り橋の下の運河
+    // 銀座のゆるい左で京橋へ戻る（周回が閉じる長さを計算する）
+    pieces: closeLoop(ROAD_ORIGIN, C1_PIECES, 120, 1, { h: 0 }),
+    // 東京湾（南と西）
     sea: [
-      [-900, -1400, 2100, -470],
-      [880, -470, 1500, -45],
+      [-1700, 60, 600, 800],
+      [-1700, -700, -1010, 60],
     ],
   },
 };
