@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CarMesh, carStyle } from './carMesh';
+import { createReflections } from './reflections';
 
 /**
  * メニューの車の見た目: 回る台の上の車を、小さな別の canvas に描く。
@@ -45,6 +46,7 @@ export class CarPreview {
     try {
       this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.scene.environment = createReflections(this.renderer);
       return true;
     } catch {
       return false;
