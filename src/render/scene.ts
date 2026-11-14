@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Environment, TimeOfDay } from '../game/environment';
+import { createReflections } from './reflections';
 import { REMOTE_HEADLIGHTS } from '../game/headlights';
 
 /** 影を描く範囲（車の周りだけ影を計算して軽くする） */
@@ -97,6 +98,7 @@ export class GameScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(this.renderer.domElement);
+    this.scene.environment = createReflections(this.renderer);
 
     this.scene.background = new THREE.Color(LIGHTING.day.sky);
     this.scene.fog = this.fog;
@@ -184,6 +186,8 @@ export class GameScene {
     // 夜にライトを消すと、月明かりだけでほとんど見えない
     const dark = this.night && !this.headlightsOn ? NIGHT_LIGHTS_OFF : 1;
     this.hemi.intensity = this.hemiLevel * dark;
+    // 車に映り込む景色の明るさも、空の光に合わせる（夜は暗い）
+    this.scene.environmentIntensity = Math.min(1, this.hemiLevel / LIGHTING.day.hemi) * dark * (this.night ? 0.3 : 1);
     this.sun.intensity = this.sunLevel * dark;
   }
 
