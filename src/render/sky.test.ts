@@ -57,3 +57,21 @@ describe('画質', () => {
     expect(defaultQuality(true)).toBe('standard');
   });
 });
+
+describe('雲', () => {
+  it('雲を出すと空の上のほうに白い所が増える', () => {
+    const base = { zenith: 0x4a86d4, horizon: 0xa9d4f5, sun: new THREE.Vector3(0, -1, 0), glow: 0xffffff, glowStrength: 0 };
+    const white = (img: Uint8Array) => {
+      let n = 0;
+      for (let y = SKY_HEIGHT * 0.6; y < SKY_HEIGHT; y++) {
+        for (let x = 0; x < SKY_WIDTH; x += 4) {
+          const [r, g, b] = at(img, x, Math.floor(y));
+          if (r > 200 && g > 200 && b > 200) n++;
+        }
+      }
+      return n;
+    };
+    expect(white(skyImage(base))).toBe(0);
+    expect(white(skyImage({ ...base, clouds: 0.55 }))).toBeGreaterThan(100);
+  });
+});

@@ -152,6 +152,7 @@ async function main() {
   let level = new Level(rapier, MAPS[mapIndex]);
   level.car.params = carParams();
   view.scene.add(level.group);
+  view.setFarMountains(level.road?.spec.scenery === 'touge');
   let prev = level.car.snapshot();
   let curr = prev;
   let input = { ...NEUTRAL_INPUT };
@@ -832,6 +833,7 @@ async function main() {
     level = new Level(rapier, MAPS[mapIndex]);
     level.car.params = carParams();
     view.scene.add(level.group);
+    view.setFarMountains(level.road?.spec.scenery === 'touge');
     remoteCars.attachLevel(level);
     // レース用でないマップに替わったらレースをやめる（レース用ならそのコースでやり直し）
     if (race && !level.course) {
