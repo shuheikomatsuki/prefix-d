@@ -2,6 +2,12 @@ import * as THREE from 'three';
 import type { Environment, TimeOfDay } from '../game/environment';
 import { createReflections } from './reflections';
 import { setCourseWetness } from './courseMaterials';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import type { Quality } from './quality';
+import { createStars, skyTexture } from './sky';
 import { REMOTE_HEADLIGHTS } from '../game/headlights';
 
 /** 影を描く範囲（車の周りだけ影を計算して軽くする） */
@@ -9,7 +15,13 @@ const SHADOW_EXTENT = 50;
 
 /** 時間帯ごとの空と光 */
 interface Lighting {
+  /** 地平線の空の色（霧の色） */
   sky: number;
+  /** 真上の空の色 */
+  zenith: number;
+  /** 太陽（月）のまわりのにじみの色と強さ */
+  glow: number;
+  glowStrength: number;
   hemiSky: number;
   hemiGround: number;
   hemi: number;
@@ -24,6 +36,9 @@ interface Lighting {
 const LIGHTING: Record<TimeOfDay, Lighting> = {
   morning: {
     sky: 0xf2c9a4,
+    zenith: 0x6f8fc0,
+    glow: 0xffb070,
+    glowStrength: 1,
     hemiSky: 0xffe3c8,
     hemiGround: 0x5b6a4a,
     hemi: 1.3,
@@ -35,6 +50,9 @@ const LIGHTING: Record<TimeOfDay, Lighting> = {
   },
   day: {
     sky: 0xa9d4f5,
+    zenith: 0x4a86d4,
+    glow: 0xfff6e0,
+    glowStrength: 0.9,
     hemiSky: 0xdfefff,
     hemiGround: 0x5b7a4a,
     hemi: 1.6,
@@ -46,6 +64,9 @@ const LIGHTING: Record<TimeOfDay, Lighting> = {
   },
   night: {
     sky: 0x0a0f1f,
+    zenith: 0x02040b,
+    glow: 0xc8d4ff,
+    glowStrength: 0.35,
     hemiSky: 0x5a6aa0,
     hemiGround: 0x10160f,
     hemi: 0.75,
@@ -90,6 +111,12 @@ export class GameScene {
   /** 他の人の車の前を照らすライト（近い車から順に使う。数を変えるとシェーダーを作り直すので、使わない分は暗くしておく） */
   private readonly remoteHeadlights = Array.from({ length: REMOTE_HEADLIGHTS }, () => new THREE.SpotLight(0xfff0d0, 0, 120, 0.55, 0.5, 1));
   private readonly rain: THREE.LineSegments;
+  private quality: Quality = 'standard';
+  private composer: EffectComposer | null = null;
+  private renderPass: RenderPass | null = null;
+  private readonly bloom: UnrealBloomPass;
+  /** 夜の星（カメラと一緒に動かす） */
+  private readonly stars = createStars();
   private readonly rainPositions: Float32Array;
 
   constructor(container: HTMLElement) {
@@ -97,11 +124,15 @@ export class GameScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // 影の縁をぼかして、くっきりしすぎないようにする
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
     this.scene.environment = createReflections(this.renderer);
 
     this.scene.background = new THREE.Color(LIGHTING.day.sky);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.35, 0.35, 0.9);
+    this.stars.visible = false;
+    this.scene.add(this.stars);
     this.scene.fog = this.fog;
 
     this.hemi = new THREE.HemisphereLight(LIGHTING.day.hemiSky, LIGHTING.day.hemiGround, LIGHTING.day.hemi);
@@ -158,7 +189,19 @@ export class GameScene {
       near = 4;
       far = env.time === 'night' ? 55 : 70;
     }
-    (this.scene.background as THREE.Color).copy(sky);
+    // 空: 真上の色は、雨や霧ほど地平線の色（灰色）に近づく。太陽のにじみは晴れの日だけはっきり見える
+    const clear = env.weather === 'clear';
+    const zenith = new THREE.Color(l.zenith).lerp(sky, clear ? 0 : env.weather === 'rain' ? 0.85 : 0.95);
+    const background = skyTexture({
+      zenith: zenith.getHex(),
+      horizon: sky.getHex(),
+      sun: l.sunOffset,
+      glow: l.glow,
+      glowStrength: l.glowStrength * (clear ? 1 : 0.15),
+    });
+    if (this.scene.background instanceof THREE.Texture) this.scene.background.dispose();
+    this.stars.visible = env.time === 'night' && clear;
+    this.scene.background = background;
     this.fog.color.copy(sky);
     this.fog.near = near;
     this.fog.far = far;
@@ -227,6 +270,7 @@ export class GameScene {
 
   /** 雨を降らせる（カメラの周りだけ） */
   update(dt: number, camera: THREE.Camera): void {
+    this.stars.position.copy(camera.position);
     if (!this.rain.visible) return;
     const p = this.rainPositions;
     const fall = RAIN_SPEED * dt;
@@ -244,6 +288,8 @@ export class GameScene {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.composer?.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer?.setSize(window.innerWidth, window.innerHeight);
   }
 
   /** 描画先の大きさが画面とずれていたら合わせる（スマホの向きやアドレスバーが変わったのに resize が来ないときのため） */
@@ -252,7 +298,49 @@ export class GameScene {
     if (size.x !== window.innerWidth || size.y !== window.innerHeight) this.resize(camera);
   }
 
+  /** 画質を変える（高: 光のにじみと細かい影） */
+  setQuality(quality: Quality): void {
+    this.quality = quality;
+    this.sun.shadow.mapSize.setScalar(quality === 'high' ? 4096 : 2048);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+    if (quality === 'standard') {
+      this.composer?.dispose();
+      this.composer = null;
+    }
+  }
+
+  get currentQuality(): Quality {
+    return this.quality;
+  }
+
+  /** 高画質の描き方: 一度画像に描いて、明るい所（ライト・太陽）のにじみを足してから画面に出す */
+  private ensureComposer(): EffectComposer {
+    if (this.composer) return this.composer;
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    // 画像に描くと画面の縁のギザギザ消し（アンチエイリアス）が効かないので、画像のほうで行う（samples）
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(this.renderer, target);
+    this.renderPass = new RenderPass(this.scene, new THREE.PerspectiveCamera());
+    composer.addPass(this.renderPass);
+    composer.addPass(this.bloom);
+    composer.addPass(new OutputPass());
+    composer.setPixelRatio(this.renderer.getPixelRatio());
+    composer.setSize(window.innerWidth, window.innerHeight);
+    this.composer = composer;
+    return composer;
+  }
+
   render(camera: THREE.Camera): void {
+    if (this.quality === 'high') {
+      const composer = this.ensureComposer();
+      this.renderPass!.camera = camera;
+      // 夜はライトのにじみを強く。昼は日の当たった白線などがにじまないよう、太陽のようにとても明るい所だけ
+      this.bloom.strength = this.night ? 0.45 : 0.25;
+      this.bloom.threshold = this.night ? 1.0 : 1.8;
+      composer.render();
+      return;
+    }
     this.renderer.render(this.scene, camera);
   }
 }

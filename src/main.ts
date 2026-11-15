@@ -42,6 +42,7 @@ import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
 import { nearestLit } from './game/headlights';
 import { Mirrors, loadMirrorMode } from './render/mirrors';
+import { loadQuality } from './render/quality';
 import { CAR_DIMENSIONS, type CarSnapshot, type Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
 import { type DriverInput, NEUTRAL_INPUT, VEHICLE_PRESETS, type VehicleParams, cornerGripShare, keySteerLimit, steerLimitAt, topSpeedOf } from './sim/vehicle';
@@ -95,6 +96,7 @@ async function main() {
   const serverUrl: string = params.get('server') ?? import.meta.env.VITE_SERVER_URL ?? '';
 
   const view = new GameScene(document.getElementById('app')!);
+  view.setQuality(loadQuality());
   const cameraRig = new CameraRig(window.innerWidth / window.innerHeight);
   const hud = new Hud();
   const sound = new SoundSystem();
@@ -1417,6 +1419,7 @@ async function main() {
     settings: settingItems({
       cameraRig,
       mirrors,
+      view,
       minimap,
       sound,
       bgm,
