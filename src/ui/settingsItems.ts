@@ -4,6 +4,8 @@ import { type KeyboardInput, saveSmoothKeySteer, saveSpeedKeySteer } from '../co
 import { MAX_EMOTE_LENGTH } from '../net/protocol';
 import type { CameraRig } from '../render/camera';
 import { MIRROR_MODES, type Mirrors, saveMirrorMode } from '../render/mirrors';
+import { QUALITY_MODES, saveQuality } from '../render/quality';
+import type { GameScene } from '../render/scene';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './fullscreen';
 import type { MenuItem } from './menu';
 import type { Minimap } from './minimap';
@@ -18,6 +20,7 @@ export const settingDetail = (title: string, lines: string[]) => () => textDetai
 export interface SettingsContext {
   cameraRig: CameraRig;
   mirrors: Mirrors;
+  view: Pick<GameScene, 'setQuality' | 'currentQuality'>;
   minimap: Minimap;
   sound: SoundSystem;
   bgm: BgmPlayer;
@@ -48,6 +51,17 @@ export function settingItems(c: SettingsContext): MenuItem[] {
         saveMirrorMode(c.mirrors.mode);
       },
       detail: settingDetail('ミラー', ['走っているときに出すミラー。押すたびに「なし → バックミラー → サイドのみ → バック＋サイド」と切り替わります。', '古いスマホで重いときは「なし」にしてください。']),
+    },
+    {
+      label: () => '画質',
+      value: () => QUALITY_MODES.find((m) => m.id === c.view.currentQuality)!.label,
+      run: () => {
+        const i = QUALITY_MODES.findIndex((m) => m.id === c.view.currentQuality);
+        const next = QUALITY_MODES[(i + 1) % QUALITY_MODES.length].id;
+        c.view.setQuality(next);
+        saveQuality(next);
+      },
+      detail: settingDetail('画質', ['「高」は影を細かく、遠くまで描きます（パソコン向け）。', '重いとき・スマホでは「標準」にしてください。']),
     },
     {
       label: () => 'マップ',
