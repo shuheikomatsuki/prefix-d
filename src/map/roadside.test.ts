@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { IROHA_UP_MAP, MYOGI_UP_MAP, SHUTOKO_MAP, VALLEY_UP_MAP } from './maps';
 import { FLAG_BRIDGE, FLAG_TUNNEL, buildRoad } from './road';
 import { buildRoadCuts } from './roadCuts';
-import { CHEVRON_CURVATURE, roadsideProps } from './roadside';
+import { CHEVRON_CURVATURE, roadsideProps, undergrowth } from './roadside';
 
 describe('道ばたの小物', () => {
   for (const map of [IROHA_UP_MAP, MYOGI_UP_MAP, VALLEY_UP_MAP]) {
@@ -51,5 +51,38 @@ describe('道ばたの小物', () => {
 
   it('首都高には置かない', () => {
     expect(roadsideProps(buildRoad(SHUTOKO_MAP.road!), null)).toEqual([]);
+  });
+});
+
+describe('道ばたの下草', () => {
+  const road = buildRoad(MYOGI_UP_MAP.road!);
+  const cuts = buildRoadCuts(road);
+  const plants = undergrowth(road, cuts);
+
+  it('草の株と茂みが並び、路面にはかからない', () => {
+    const grass = plants.filter((p) => p.kind === 'grass').length;
+    const shrubs = plants.filter((p) => p.kind === 'shrub').length;
+    expect(grass).toBeGreaterThan(1000);
+    expect(shrubs).toBeGreaterThan(200);
+    // 多すぎると重くなる（1km あたり 4000 本まで）
+    expect(plants.length).toBeLessThan((road.length / 1000) * 4000);
+    for (let n = 0; n < plants.length; n += 7) {
+      const p = plants[n];
+      let best = Infinity;
+      let bi = 0;
+      for (let i = 0; i < road.count; i++) {
+        const d = Math.hypot(p.x - road.x[i], p.z - road.z[i]);
+        if (d < best) {
+          best = d;
+          bi = i;
+        }
+      }
+      expect(best).toBeGreaterThan(road.width[bi] / 2 + 0.4);
+    }
+  });
+
+  it('避ける所には置かない', () => {
+    const avoided = undergrowth(road, cuts, (x) => x > 0);
+    expect(avoided.every((p) => p.x <= 0)).toBe(true);
   });
 });

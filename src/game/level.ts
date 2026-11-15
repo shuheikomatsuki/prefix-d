@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { insideShortcut } from '../map/shortcuts';
 import type { MapDefinition } from '../map/tilemap';
 import { buildMapMesh, buildShortcutMesh, createConeMesh } from '../render/mapMesh';
 import { buildRaceLines } from '../render/raceMesh';
@@ -21,7 +22,7 @@ export class Level extends Track {
     super(rapier, def);
     this.car = this.createCar(this.spawn);
 
-    if (this.road) this.group.add(buildRoadMesh(this.road, this.obstacles, this.roadGround));
+    if (this.road) this.group.add(buildRoadMesh(this.road, this.obstacles, this.roadGround, (x, z) => this.shortcuts.some((sc) => insideShortcut(sc, x, z))));
     else this.group.add(buildMapMesh(this.map, this.obstacles, this.terrain));
     const surface = this.hasSlopes ? { heightAt: (x: number, z: number) => this.heightAt(x, z, 0), gradientAt: (x: number, z: number) => this.gradientAt(x, z, 0) } : null;
     if (this.course) this.group.add(buildRaceLines(this.course, surface));

@@ -1,4 +1,5 @@
-import { FLAG_BLIND, FLAG_BRIDGE, FLAG_NEW, FLAG_TUNNEL, PointGrid, type RoadModel } from './road';
+import { FLAG_BLIND, FLAG_BRIDGE, FLAG_GUTTER, FLAG_NEW, FLAG_TUNNEL, GUTTER_WIDTH, PointGrid, type RoadModel } from './road';
+import { tileHash } from './obstacles';
 import { type RoadCuts, cutAt } from './roadCuts';
 
 /**
@@ -104,3 +105,61 @@ export function roadsideProps(road: RoadModel, cuts: RoadCuts | null): RoadsideP
   }
   return out;
 }
+
+/** 道ばたの下草: 草の株（grass）と低い茂み（shrub） */
+export interface Undergrowth {
+  kind: 'grass' | 'shrub';
+  x: number;
+  z: number;
+  /** 高さ（茂みは大きさ）[m] */
+  size: number;
+  yaw: number;
+  /** 色のばらつき（0〜1） */
+  tone: number;
+}
+
+/**
+ * 峠の道路の両脇の下草。路肩から数 m の所に草の株を、少し離れて茂みを置く。
+ * 橋・トンネル・山側の岩の崖・他の道路の上・U ターンの広場・ヘアピンの内側の近道の帯（avoid）には置かない
+ */
+export function undergrowth(road: RoadModel, cuts: RoadCuts | null, avoid: (x: number, z: number) => boolean = () => false): Undergrowth[] {
+  if (road.spec.scenery !== 'touge') return [];
+  const out: Undergrowth[] = [];
+  const grid = new PointGrid(road.x, road.z);
+  const near: number[] = [];
+  const turn = road.turnaround;
+  const clear = (x: number, z: number) => {
+    near.length = 0;
+    grid.near(x, z, 20, near);
+    for (const k of near) {
+      const d = Math.hypot(x - road.x[k], z - road.z[k]);
+      if (d < road.width[k] / 2 + 0.5) return false;
+      if (road.flags[k] & (FLAG_BRIDGE | FLAG_TUNNEL) && d < road.width[k] / 2 + 8) return false;
+    }
+    if (turn && Math.hypot(x - turn.cx, z - turn.cz) < turn.plaza + 1) return false;
+    return !avoid(x, z);
+  };
+  const step = Math.max(1, Math.round(1.3 / road.step));
+  for (let i = 0; i < road.count; i += step) {
+    if (road.flags[i] & (FLAG_BRIDGE | FLAG_TUNNEL)) continue;
+    const yaw = road.yaw[i];
+    for (const side of [-1, 1]) {
+      if (cuts && cutAt(cuts, i, side) > 0.3) continue;
+      // 側溝やガードレールのある所は、その外から
+      const start = 0.6 + (road.flags[i] & FLAG_GUTTER ? GUTTER_WIDTH : 0) + (road.flags[i] & FLAG_NEW ? 0.8 : 0);
+      for (let r = 0; r < 3; r++) {
+        const h = (a: number) => tileHash(i, side * 7 + r * 3 + a, 101);
+        const shrub = r === 2;
+        if (h(0) > (shrub ? 0.35 : 0.8)) continue;
+        const off = side * (road.width[i] / 2 + start + (shrub ? 2 + h(1) * 4 : r * 1.4 + h(1) * 1.6));
+        const along = (h(2) - 0.5) * 1.3;
+        const x = road.x[i] + Math.cos(yaw) * off + Math.sin(yaw) * along;
+        const z = road.z[i] - Math.sin(yaw) * off + Math.cos(yaw) * along;
+        if (!clear(x, z)) continue;
+        out.push({ kind: shrub ? 'shrub' : 'grass', x, z, size: shrub ? 0.8 + h(3) * 1.2 : 0.35 + h(3) * 0.45, yaw: h(4) * Math.PI * 2, tone: h(5) });
+      }
+    }
+  }
+  return out;
+}
+
