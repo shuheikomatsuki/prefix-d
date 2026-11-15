@@ -4,6 +4,7 @@ import { createReflections } from './reflections';
 import { setCourseWetness } from './courseMaterials';
 import type { Quality } from './quality';
 import { createStars, skyTexture } from './sky';
+import { FarMountains } from './farMountains';
 import { REMOTE_HEADLIGHTS } from '../game/headlights';
 
 /** 影を描く範囲（車の周りだけ影を計算して軽くする） */
@@ -76,6 +77,9 @@ const LIGHTING: Record<TimeOfDay, Lighting> = {
   },
 };
 
+/** 遠くの山並みの、かすむ前の色（朝は逆光で暖かい灰色、夜はほとんど黒） */
+const MOUNTAIN_COLORS: Record<TimeOfDay, number> = { morning: 0x5f5a5c, day: 0x3c5a4a, night: 0x04060b };
+
 /** 雨粒の数と、カメラの周りに降らせる範囲 [m] */
 const RAIN_DROPS = 1800;
 const RAIN_BOX = { x: 70, y: 30, z: 70 };
@@ -112,6 +116,10 @@ export class GameScene {
   private quality: Quality = 'standard';
   /** 夜の星（カメラと一緒に動かす） */
   private readonly stars = createStars();
+  /** 遠くの山並み（カメラと一緒に動かす） */
+  private readonly mountains = new FarMountains();
+  private mountainsWeather = true;
+  private mountainsCourse = true;
   private readonly rainPositions: Float32Array;
 
   constructor(container: HTMLElement) {
@@ -126,7 +134,7 @@ export class GameScene {
 
     this.scene.background = new THREE.Color(LIGHTING.day.sky);
     this.stars.visible = false;
-    this.scene.add(this.stars);
+    this.scene.add(this.stars, this.mountains.group);
     this.scene.fog = this.fog;
 
     this.hemi = new THREE.HemisphereLight(LIGHTING.day.hemiSky, LIGHTING.day.hemiGround, LIGHTING.day.hemi);
@@ -192,9 +200,16 @@ export class GameScene {
       sun: l.sunOffset,
       glow: l.glow,
       glowStrength: l.glowStrength * (clear ? 1 : 0.15),
+      // 晴れた朝・昼は白い雲が浮かぶ（朝は朝日の色）。雨・霧・夜は出さない
+      clouds: clear && env.time !== 'night' ? 0.55 : 0,
+      cloudColor: env.time === 'morning' ? 0xffd9b8 : 0xffffff,
     });
     if (this.scene.background instanceof THREE.Texture) this.scene.background.dispose();
     this.stars.visible = env.time === 'night' && clear;
+    // 遠くの山: 晴れの日は少しかすみ、雨の日はほとんど空に溶け、霧の日は見えない
+    this.mountainsWeather = env.weather !== 'fog';
+    this.mountains.visible = this.mountainsWeather && this.mountainsCourse;
+    this.mountains.setColors(sky, new THREE.Color(MOUNTAIN_COLORS[env.time]), clear ? 0 : 0.6);
     this.scene.background = background;
     this.fog.color.copy(sky);
     this.fog.near = near;
@@ -212,6 +227,12 @@ export class GameScene {
     this.rain.visible = env.weather === 'rain';
     // 雨の日は路面が濡れてつやが出る（霧の日は少し湿っている）
     setCourseWetness(env.weather === 'rain' ? 1 : env.weather === 'fog' ? 0.3 : 0);
+  }
+
+  /** 遠くの山並みを出すか（山の中の峠だけ。街の中の首都高や練習用の街には出さない） */
+  setFarMountains(on: boolean): void {
+    this.mountainsCourse = on;
+    this.mountains.visible = this.mountainsWeather && on;
   }
 
   /** 自分の車のヘッドライトをつける・消す */
@@ -265,6 +286,7 @@ export class GameScene {
   /** 雨を降らせる（カメラの周りだけ） */
   update(dt: number, camera: THREE.Camera): void {
     this.stars.position.copy(camera.position);
+    this.mountains.follow(camera);
     if (!this.rain.visible) return;
     const p = this.rainPositions;
     const fall = RAIN_SPEED * dt;

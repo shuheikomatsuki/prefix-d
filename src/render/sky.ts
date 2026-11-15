@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { hash2 } from './courseTextures';
+import { hash2, noise2 } from './courseTextures';
 
 /**
  * 空の背景（scene.background）。真上は濃い色、地平線は霧と同じ色のグラデーションに、太陽（夜は月）の
@@ -17,6 +17,9 @@ export interface SkyParams {
   /** 太陽のにじみの色と強さ（0 = なし） */
   glow: number;
   glowStrength: number;
+  /** 雲の量（0 = 雲なし、1 = 空の半分くらい）と色 */
+  clouds?: number;
+  cloudColor?: number;
 }
 
 export const SKY_WIDTH = 512;
@@ -39,6 +42,7 @@ export function skyImage(p: SkyParams): Uint8Array {
   const horizon = new THREE.Color(p.horizon);
   const glow = new THREE.Color(p.glow);
   const sun = p.sun.clone().normalize();
+  const cloud = new THREE.Color(p.cloudColor ?? 0xffffff);
   const d = new THREE.Vector3();
   const c = new THREE.Color();
   for (let y = 0; y < SKY_HEIGHT; y++) {
@@ -52,6 +56,23 @@ export function skyImage(p: SkyParams): Uint8Array {
         // 太陽の円盤（とても明るい）と、まわりの広いにじみ
         const halo = Math.pow(Math.max(0, cos), 24) * 0.55 + Math.pow(Math.max(0, cos), 400) * 0.6 + (cos > 0.9993 ? 1 : 0);
         c.lerp(glow, Math.min(1, halo * p.glowStrength));
+      }
+      if (p.clouds && up > 0.02) {
+        // 空を高さ一定の平らな面とみなし、その面の上の位置でノイズを取る（地平線へ行くほど雲が小さく、つぶれる）
+        const px = (d.x / up) * 0.6;
+        const pz = (d.z / up) * 0.6;
+        let n = 0;
+        let amp = 0.55;
+        let f = 1;
+        for (let o = 0; o < 4; o++) {
+          n += noise2(px * f + 3, pz * f + 7, 131 + o) * amp;
+          amp *= 0.5;
+          f *= 2.3;
+        }
+        // n の平均は 0.5 くらい。量が多いほど、低いノイズでも雲にする
+        const t = Math.max(0, Math.min(1, (n / 1.03 - (0.75 - p.clouds * 0.4)) / 0.12));
+        // 地平線の近くは薄く（遠くの雲はかすむ）
+        c.lerp(cloud, t * 0.85 * Math.min(1, up * 6));
       }
       const i = (y * SKY_WIDTH + x) * 4;
       // Color の値はリニアなので、画像（sRGB）に戻して入れる

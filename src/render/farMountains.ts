@@ -8,9 +8,9 @@ import { noise2 } from './courseTextures';
  */
 
 /** 山の輪の半径 [m] と、高さの範囲 [m]（カメラの高さから） */
-const RANGES = [
+export const RANGES = [
   { radius: 1350, min: 70, max: 260, seed: 121, haze: 0.55 },
-  { radius: 1050, min: 30, max: 150, seed: 122, haze: 0.3 },
+  { radius: 1050, min: 15, max: 210, seed: 122, haze: 0.3 },
 ] as const;
 /** 輪を分ける数 */
 const SEGMENTS = 256;
@@ -34,7 +34,7 @@ export function ridgeHeight(a: number, range: (typeof RANGES)[number]): number {
   }
   n /= sum;
   // 尾根を尖らせる
-  const peak = Math.pow(n, 1.6);
+  const peak = Math.pow(n, 2);
   return range.min + (range.max - range.min) * peak;
 }
 
