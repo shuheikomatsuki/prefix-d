@@ -76,6 +76,8 @@ export class Level extends Track {
       }
     });
     for (const m of materials) {
+      // コースの質感付きの材質は、次のコースでも使い回す
+      if (m.userData.shared) continue;
       if ('map' in m && m.map instanceof THREE.Texture) m.map.dispose();
       m.dispose();
     }

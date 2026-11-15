@@ -18,6 +18,8 @@ import { CUT_FOOT, CUT_TOP, type RoadCuts, buildRoadCuts, cutAt } from '../map/r
 import { guardrailAt, makeWallBlocked, wallGap, walledAt } from '../map/roadObstacles';
 import type { RoadGround } from '../map/roadTerrain';
 import { COLORS, mergeMixed, terrainGeometry } from './mapMesh';
+import { surfaceMaterial, worldUV } from './courseMaterials';
+import { TEXTURE_METERS, hash2, noise2 } from './courseTextures';
 
 /** 橋・高架の床の厚さ [m] */
 const DECK_THICKNESS = 1.4;
@@ -119,13 +121,57 @@ function newRoadCuts(road: RoadModel, grid: PointGrid): ((x: number, z: number, 
   };
 }
 
+/**
+ * 路面の横の断面の点（道路の中心からの横 u と、色に掛ける明るさ）。各車線のタイヤが通る所は少し黒ずみ
+ * （ゴムが付いて磨かれる）、端は砂ぼこりで少し白っぽい
+ */
+export function roadSamples(width: number, lanes: number): [number, number][] {
+  const us = new Set<number>([-width / 2, width / 2, -width / 2 + 0.5, width / 2 - 0.5]);
+  const laneW = width / lanes;
+  const tracks: number[] = [];
+  for (let k = 0; k < lanes; k++) {
+    const c = -width / 2 + laneW * (k + 0.5);
+    us.add(c);
+    if (k > 0) us.add(-width / 2 + laneW * k);
+    if (laneW > 2.6) {
+      for (const d of [-0.75, 0.75]) {
+        us.add(c + d);
+        tracks.push(c + d);
+      }
+    }
+  }
+  return [...us]
+    .sort((a, b) => a - b)
+    .map((u) => {
+      const edge = Math.max(0, 1 - (width / 2 - Math.abs(u)) / 0.5);
+      const track = tracks.some((t) => Math.abs(t - u) < 1e-6) ? 1 : 0;
+      return [u, 1 - track * 0.14 + edge * 0.1];
+    });
+}
+
+/**
+ * 路面の場所ごとの明るさ: ゆるやかなムラと、ところどころの補修跡（片側の車線を数 m だけ新しく舗装した、
+ * 黒っぽい四角）。古い道は補修跡が多い
+ */
+export function asphaltPatch(s: number, u: number, width: number, old: boolean): number {
+  let k = 0.94 + noise2(s / 25, u / 6, 61) * 0.12;
+  const every = old ? 23 : 41;
+  const p = Math.floor(s / every);
+  if (hash2(p, 0, 62) < (old ? 0.5 : 0.25)) {
+    const start = p * every + hash2(p, 1, 62) * every * 0.4;
+    const len = 3 + hash2(p, 2, 62) * 7;
+    const side = hash2(p, 3, 62) < 0.5 ? -1 : 1;
+    if (s >= start && s <= start + len && u * side >= -0.2 && u * side <= width / 2) k *= old ? 0.7 : 0.8;
+  }
+  return k;
+}
+
 /** 中心線で描く道路のマップの見た目 */
 export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: RoadGround | null): THREE.Group {
   const group = new THREE.Group();
   const highway = road.spec.scenery === 'highway';
   const circuit = road.spec.scenery === 'circuit';
   const lowY = highway ? (road.spec.highway?.ground ?? -14) : 0;
-  const layer = (n: number) => ({ polygonOffset: true, polygonOffsetFactor: -n, polygonOffsetUnits: -n });
   const add = (g: THREE.BufferGeometry, mat: THREE.Material, shadow = true) => {
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true;
@@ -146,7 +192,7 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
 
   // --- 地面 ---
   if (ground) {
-    const terrain = add(terrainGeometry(ground, newRoadCuts(road, grid)), new THREE.MeshLambertMaterial({ vertexColors: true }), false);
+    const terrain = add(terrainGeometry(ground, newRoadCuts(road, grid)), surfaceMaterial('ground', { vertexColors: true }), false);
     terrain.receiveShadow = true;
     const low = ground.grid.ground.reduce((a, b) => Math.min(a, b), Infinity) - 2;
     const outside = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: COLORS.outside }));
@@ -168,7 +214,7 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
       cz += road.z[i] / road.count;
     }
     // 大きな1枚の面だと奥行きの精度が足りず、近くで路面の上に透けて見えるので、細かく分けて少し下げる
-    const lawn = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000, 80, 80).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: COLORS.grass }));
+    const lawn = new THREE.Mesh(worldUV(new THREE.PlaneGeometry(4000, 4000, 80, 80).rotateX(-Math.PI / 2), TEXTURE_METERS.ground), surfaceMaterial('ground', { color: COLORS.grass }));
     lawn.position.set(cx, -0.08, cz);
     lawn.receiveShadow = true;
     group.add(lawn);
@@ -179,64 +225,67 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
   // --- 路面（荒れた区間は波打たせ、古い道と新しい舗装で色を変える） ---
   const surface: number[] = [];
   const surfaceColors: number[] = [];
+  const surfaceUV: number[] = [];
   const base = new THREE.Color(COLORS.road);
   const oldColor = new THREE.Color(0x6a6c70);
   const newColor = new THREE.Color(0x303339);
   const lift = (i: number, u: number) => bumpHeight(road, i * road.step, u);
+  const laneCount = highway ? (road.spec.highway?.lanes ?? 2) : circuit ? 1 : 2;
   {
     const last = road.closed ? road.count : road.count - 1;
-    let prev: { ring: V[]; color: THREE.Color } | null = null;
+    type P = { p: V; c: THREE.Color; u: number; s: number };
+    let prev: P[] | null = null;
+    const tri = (a: P, b: P, c: P) => {
+      const ny = (b.p[2] - a.p[2]) * (c.p[0] - a.p[0]) - (b.p[0] - a.p[0]) * (c.p[2] - a.p[2]);
+      for (const q of ny >= 0 ? [a, b, c] : [a, c, b]) {
+        surface.push(...q.p);
+        surfaceColors.push(q.c.r, q.c.g, q.c.b);
+        surfaceUV.push(q.u / TEXTURE_METERS.asphalt, q.s / TEXTURE_METERS.asphalt);
+      }
+    };
     for (let i = 0; i <= last; i++) {
       const k = i % road.count;
       // 荒れた区間は 1m ごと、そうでなければ 2m ごと
       if (i % 2 === 1 && road.bump[k] === 0 && i !== last) continue;
       const f = frame(road, k);
-      const lanes = road.bump[k] > 0 ? 6 : 1;
-      const ring: V[] = [];
-      for (let j = 0; j <= lanes; j++) {
-        const u = -f.w / 2 + (f.w * j) / lanes;
-        ring.push([f.x + f.lx * u, f.y + 0.02 + lift(k, u), f.z + f.lz * u]);
-      }
-      const color = road.flags[k] & FLAG_OLD ? oldColor : road.flags[k] & FLAG_NEW ? newColor : base;
-      if (prev && prev.ring.length === ring.length) {
-        for (let j = 0; j < lanes; j++) {
-          const before = surface.length;
-          pushUp(surface, prev.ring[j], prev.ring[j + 1], ring[j + 1]);
-          pushUp(surface, prev.ring[j], ring[j + 1], ring[j]);
-          for (let v = before; v < surface.length; v += 3) surfaceColors.push(color.r, color.g, color.b);
+      const flags = road.flags[k];
+      const tone = flags & FLAG_OLD ? oldColor : flags & FLAG_NEW ? newColor : base;
+      const ring = roadSamples(f.w, laneCount).map(([u, wear]): P => {
+        const c = tone.clone().multiplyScalar(wear * asphaltPatch(i * road.step, u, f.w, (flags & FLAG_OLD) !== 0));
+        return { p: [f.x + f.lx * u, f.y + 0.02 + lift(k, u), f.z + f.lz * u], c, u, s: i * road.step };
+      });
+      if (prev && prev.length === ring.length) {
+        for (let j = 0; j + 1 < ring.length; j++) {
+          tri(prev[j], prev[j + 1], ring[j + 1]);
+          tri(prev[j], ring[j + 1], ring[j]);
         }
-      } else if (prev) {
-        // 波打つ区間の境目: 細かさの違う断面をつなぐ（両端の点だけでつなぐ）
-        const a = prev.ring;
-        const before = surface.length;
-        pushUp(surface, a[0], a[a.length - 1], ring[ring.length - 1]);
-        pushUp(surface, a[0], ring[ring.length - 1], ring[0]);
-        for (let v = before; v < surface.length; v += 3) surfaceColors.push(color.r, color.g, color.b);
       }
-      prev = { ring, color };
+      prev = ring;
     }
   }
   // U ターンの広場
   const turn = road.turnaround;
+  const plaza: THREE.BufferGeometry[] = [];
   if (turn) {
     const y = road.h[road.count - 1] + 0.015;
     const disc = new THREE.CircleGeometry(turn.plaza, 48).rotateX(-Math.PI / 2).toNonIndexed();
     disc.translate(turn.cx, y, turn.cz);
-    const p = disc.attributes.position.array as Float32Array;
-    surface.push(...p);
-    for (let v = 0; v < p.length; v += 3) surfaceColors.push(base.r, base.g, base.b);
+    plaza.push(worldUV(disc, TEXTURE_METERS.asphalt));
     // 真ん中の島（芝生と木）
     const island = new THREE.CylinderGeometry(turn.radius - road.width[road.count - 1] / 2 - 1.2, turn.radius - road.width[road.count - 1] / 2 - 1, 0.3, 32);
     island.translate(turn.cx, y + 0.15, turn.cz);
-    add(island, new THREE.MeshLambertMaterial({ color: COLORS.grass }));
+    add(worldUV(island, TEXTURE_METERS.ground), surfaceMaterial('ground', { color: COLORS.grass }));
   }
-  add(geometry(surface, surfaceColors), new THREE.MeshLambertMaterial({ vertexColors: true, ...layer(1) }), false);
+  const surfaceGeo = geometry(surface, surfaceColors);
+  surfaceGeo.setAttribute('uv', new THREE.Float32BufferAttribute(surfaceUV, 2));
+  add(surfaceGeo, surfaceMaterial('asphalt', { vertexColors: true, layer: 1 }), false);
+  if (plaza.length) add(mergeGeometries(plaza), surfaceMaterial('asphalt', { color: COLORS.road, layer: 1 }), false);
 
   // --- 白線・センターライン ---
   const edgeLines: number[] = [];
   const centerLines: number[] = [];
   const lineW = 0.15;
-  const lanes = highway ? (road.spec.highway?.lanes ?? 2) : circuit ? 1 : 2;
+  const lanes = laneCount;
   {
     const strip = (out: number[], idx: number[], u: number) =>
       sweep(road, idx, [[u - lineW / 2, 0.035], [u + lineW / 2, 0.035]], out, lift);
@@ -285,8 +334,8 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
       }
     }
   }
-  if (edgeLines.length) add(geometry(edgeLines), new THREE.MeshLambertMaterial({ color: COLORS.line, ...layer(2) }), false);
-  if (centerLines.length) add(geometry(centerLines), new THREE.MeshLambertMaterial({ color: COLORS.centerLine, ...layer(2) }), false);
+  if (edgeLines.length) add(worldUV(geometry(edgeLines), TEXTURE_METERS.paint), surfaceMaterial('paint', { color: COLORS.line, layer: 2 }), false);
+  if (centerLines.length) add(worldUV(geometry(centerLines), TEXTURE_METERS.paint), surfaceMaterial('paint', { color: COLORS.centerLine, layer: 2 }), false);
 
   // --- 橋・高架の床と柱 ---
   const decks: number[] = [];
@@ -322,9 +371,9 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
       piers.push(p);
     }
   }
-  const deckMat = new THREE.MeshLambertMaterial({ color: COLORS.deck, side: THREE.DoubleSide });
-  if (decks.length) add(geometry(decks), deckMat);
-  if (piers.length) add(mergeMixed(piers), deckMat);
+  const deckMat = surfaceMaterial('concrete', { color: COLORS.deck, side: THREE.DoubleSide });
+  if (decks.length) add(worldUV(geometry(decks), TEXTURE_METERS.concrete), deckMat);
+  if (piers.length) add(worldUV(mergeMixed(piers), TEXTURE_METERS.concrete), deckMat);
 
   // --- 欄干・高架の壁・サーキットの壁（衝突体は短い箱だが、見た目は道路に沿ってなめらかにつなぐ） ---
   const walls: number[] = [];
@@ -354,7 +403,7 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
       }
     }
   }
-  if (walls.length) add(geometry(walls), new THREE.MeshLambertMaterial({ color: circuit ? COLORS.guardrail : COLORS.concrete, side: THREE.DoubleSide }));
+  if (walls.length) add(worldUV(geometry(walls), TEXTURE_METERS.concrete), surfaceMaterial('concrete', { color: circuit ? COLORS.guardrail : COLORS.concrete, side: THREE.DoubleSide }));
   group.add(buildGuardrails(road, gap, blocked, lift));
   // --- 見通しの悪い区間の山側の岩の崖 ---
   if (road.flags.some((f) => f & FLAG_BLIND)) group.add(buildRockFaces(road, buildRoadCuts(road)));
@@ -432,7 +481,7 @@ function buildRockFaces(road: RoadModel, cuts: RoadCuts): THREE.Mesh {
       }
     }
   }
-  const mesh = new THREE.Mesh(geometry(out, colors), new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide }));
+  const mesh = new THREE.Mesh(worldUV(geometry(out, colors), TEXTURE_METERS.rock), surfaceMaterial('rock', { vertexColors: true, flatShading: true, side: THREE.DoubleSide }));
   mesh.receiveShadow = true;
   mesh.castShadow = true;
   return mesh;
@@ -497,7 +546,7 @@ function buildGuardrails(road: RoadModel, gap: number, blocked: (x: number, z: n
     return m;
   };
   if (rails.length) mesh(geometry(rails), new THREE.MeshLambertMaterial({ color: 0xf4f5f6, side: THREE.DoubleSide })).castShadow = true;
-  if (gutters.length) mesh(geometry(gutters), new THREE.MeshLambertMaterial({ color: 0xc9c7c0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  if (gutters.length) mesh(worldUV(geometry(gutters), TEXTURE_METERS.concrete), surfaceMaterial('concrete', { color: 0xc9c7c0, layer: 1 }));
   if (posts.length) mesh(mergeGeometries(posts), new THREE.MeshLambertMaterial({ color: COLORS.guardrailPost }));
   if (reflectors.length) mesh(mergeGeometries(reflectors), new THREE.MeshBasicMaterial({ color: 0xff8a1c }));
   return group;
@@ -531,7 +580,7 @@ function buildCurbs(road: RoadModel): THREE.Group {
     [white, 0xf2f2f2],
   ] as const) {
     if (!positions.length) continue;
-    const m = new THREE.Mesh(geometry(positions), new THREE.MeshLambertMaterial({ color, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    const m = new THREE.Mesh(worldUV(geometry(positions), TEXTURE_METERS.paint), surfaceMaterial('paint', { color, layer: 1 }));
     m.receiveShadow = true;
     group.add(m);
   }
@@ -569,7 +618,7 @@ function buildGutters(road: RoadModel): THREE.Group {
     [pit, 0x2b2a27],
   ] as const) {
     if (!positions.length) continue;
-    const m = new THREE.Mesh(geometry(positions), new THREE.MeshLambertMaterial({ color, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    const m = new THREE.Mesh(worldUV(geometry(positions), TEXTURE_METERS.concrete), surfaceMaterial('concrete', { color, layer: 2 }));
     m.receiveShadow = true;
     group.add(m);
   }
@@ -650,9 +699,9 @@ function buildTunnel(road: RoadModel, i0: number, i1: number): THREE.Group {
   }
   earthGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   for (const [g, mat] of [
-    [earthGeo, new THREE.MeshLambertMaterial({ vertexColors: true, ...doubleSide })],
-    [geometry(inner), new THREE.MeshLambertMaterial({ color: COLORS.tunnel, ...doubleSide })],
-    [geometry(portal), new THREE.MeshLambertMaterial({ color: COLORS.concrete, ...doubleSide })],
+    [worldUV(earthGeo, TEXTURE_METERS.ground), surfaceMaterial('ground', { vertexColors: true, ...doubleSide })],
+    [worldUV(geometry(inner), TEXTURE_METERS.concrete), surfaceMaterial('concrete', { color: COLORS.tunnel, ...doubleSide })],
+    [worldUV(geometry(portal), TEXTURE_METERS.concrete), surfaceMaterial('concrete', { color: COLORS.concrete, ...doubleSide })],
   ] as const) {
     const m = new THREE.Mesh(g, mat);
     m.castShadow = true;
