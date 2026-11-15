@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BARRIER_HEIGHT, type MapObstacles, tileHash } from '../map/obstacles';
 import {
   FLAG_BRIDGE,
@@ -19,6 +19,8 @@ import { guardrailAt, makeWallBlocked, wallGap, walledAt } from '../map/roadObst
 import type { RoadGround } from '../map/roadTerrain';
 import { COLORS, mergeMixed, terrainGeometry } from './mapMesh';
 import { surfaceMaterial, worldUV } from './courseMaterials';
+import { buildRoadside } from './roadsideMesh';
+import { roadsideProps } from '../map/roadside';
 import { TEXTURE_METERS, hash2, noise2 } from './courseTextures';
 
 /** 橋・高架の床の厚さ [m] */
@@ -165,6 +167,14 @@ export function asphaltPatch(s: number, u: number, width: number, old: boolean):
   }
   return k;
 }
+
+/**
+ * ガードレールのビームの断面: [高さ, 道路の側へ出る量] [m]。上下 2 つの山の W 字（高さ 0.35m ほど）
+ */
+const W_BEAM: [number, number][] = Array.from({ length: 11 }, (_, k) => {
+  const t = k / 10;
+  return [0.5 + t * 0.35, 0.055 * Math.pow(Math.sin(2 * Math.PI * t), 2)];
+});
 
 /** 中心線で描く道路のマップの見た目 */
 export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: RoadGround | null): THREE.Group {
@@ -406,7 +416,11 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
   if (walls.length) add(worldUV(geometry(walls), TEXTURE_METERS.concrete), surfaceMaterial('concrete', { color: circuit ? COLORS.guardrail : COLORS.concrete, side: THREE.DoubleSide }));
   group.add(buildGuardrails(road, gap, blocked, lift));
   // --- 見通しの悪い区間の山側の岩の崖 ---
-  if (road.flags.some((f) => f & FLAG_BLIND)) group.add(buildRockFaces(road, buildRoadCuts(road)));
+  const cuts = road.flags.some((f) => f & FLAG_BLIND) ? buildRoadCuts(road) : null;
+  if (cuts) group.add(buildRockFaces(road, cuts));
+  // --- 峠の道ばたの小物（視線誘導標・矢印板・カーブミラー） ---
+  const props = roadsideProps(road, cuts);
+  if (props.length) group.add(buildRoadside(props));
 
   // --- サーキットのカーブの縁石（赤と白） ---
   if (circuit) group.add(buildCurbs(road));
@@ -512,8 +526,8 @@ function buildGuardrails(road: RoadModel, gap: number, blocked: (x: number, z: n
           continue;
         }
         const at = (uu: number, v: number): V => [f.x + f.lx * uu, f.y + v, f.z + f.lz * uu];
-        // 波形のビーム: 上下2段の面（少し折って立体に見せる）
-        const ring: V[] = [at(u, 0.45), at(u - side * 0.06, 0.6), at(u, 0.75), at(u - side * 0.06, 0.9)];
+        // 波形のビーム（W 字の断面）: 道路の側へふくらむ山が上下に 2 つ
+        const ring: V[] = W_BEAM.map(([v, d]) => at(u - side * d, v));
         if (rail) for (let k = 0; k + 1 < ring.length; k++) rails.push(...rail[k], ...rail[k + 1], ...ring[k + 1], ...rail[k], ...ring[k + 1], ...ring[k]);
         rail = ring;
         const edge = side * (f.w / 2);
@@ -525,10 +539,18 @@ function buildGuardrails(road: RoadModel, gap: number, blocked: (x: number, z: n
         gutter = g;
         if (i % postEvery === 0) {
           const pu = u + side * 0.12;
-          const post = new THREE.BoxGeometry(0.12, 1.4, 0.12);
-          post.rotateY(road.yaw[i]);
-          post.translate(f.x + f.lx * pu, f.y + 0.2, f.z + f.lz * pu);
+          // 丸い鋼管の支柱と、支柱とビームの間の小さな台（ブラケット）
+          const post = new THREE.CylinderGeometry(0.07, 0.07, 1.3, 10);
+          post.translate(f.x + f.lx * pu, f.y + 0.3, f.z + f.lz * pu);
           posts.push(post);
+          const cap = new THREE.SphereGeometry(0.07, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+          cap.translate(f.x + f.lx * pu, f.y + 0.95, f.z + f.lz * pu);
+          posts.push(cap);
+          const bracket = new THREE.BoxGeometry(0.1, 0.22, 0.12);
+          bracket.rotateY(road.yaw[i]);
+          const bu = u + side * 0.04;
+          bracket.translate(f.x + f.lx * bu, f.y + 0.68, f.z + f.lz * bu);
+          posts.push(bracket);
           if (i % reflectorEvery === 0) {
             const r = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 10).rotateZ(Math.PI / 2);
             r.rotateY(road.yaw[i] + Math.PI / 2);
@@ -545,9 +567,17 @@ function buildGuardrails(road: RoadModel, gap: number, blocked: (x: number, z: n
     group.add(m);
     return m;
   };
-  if (rails.length) mesh(geometry(rails), new THREE.MeshLambertMaterial({ color: 0xf4f5f6, side: THREE.DoubleSide })).castShadow = true;
+  // 白く塗った鋼板（少しつやがある）。断面の折れ目を丸く見せるよう、同じ位置の頂点の向きを平均する
+  const paint = new THREE.MeshStandardMaterial({ color: 0xf4f5f6, roughness: 0.42, metalness: 0.15, side: THREE.DoubleSide });
+  if (rails.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(rails, 3));
+    const smooth = mergeVertices(g, 1e-3);
+    smooth.computeVertexNormals();
+    mesh(smooth, paint).castShadow = true;
+  }
   if (gutters.length) mesh(worldUV(geometry(gutters), TEXTURE_METERS.concrete), surfaceMaterial('concrete', { color: 0xc9c7c0, layer: 1 }));
-  if (posts.length) mesh(mergeGeometries(posts), new THREE.MeshLambertMaterial({ color: COLORS.guardrailPost }));
+  if (posts.length) mesh(mergeMixed(posts), paint).castShadow = true;
   if (reflectors.length) mesh(mergeGeometries(reflectors), new THREE.MeshBasicMaterial({ color: 0xff8a1c }));
   return group;
 }
