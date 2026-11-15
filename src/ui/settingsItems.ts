@@ -61,7 +61,7 @@ export function settingItems(c: SettingsContext): MenuItem[] {
         c.view.setQuality(next);
         saveQuality(next);
       },
-      detail: settingDetail('画質', ['「高」はライトや太陽の光のにじみと、細かい影を足します（パソコン向け）。', '重いとき・スマホでは「標準」にしてください。']),
+      detail: settingDetail('画質', ['「高」は影を細かく、遠くまで描きます（パソコン向け）。', '重いとき・スマホでは「標準」にしてください。']),
     },
     {
       label: () => 'マップ',

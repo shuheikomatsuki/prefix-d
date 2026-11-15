@@ -2,16 +2,14 @@ import * as THREE from 'three';
 import type { Environment, TimeOfDay } from '../game/environment';
 import { createReflections } from './reflections';
 import { setCourseWetness } from './courseMaterials';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Quality } from './quality';
 import { createStars, skyTexture } from './sky';
 import { REMOTE_HEADLIGHTS } from '../game/headlights';
 
 /** 影を描く範囲（車の周りだけ影を計算して軽くする） */
 const SHADOW_EXTENT = 50;
+/** 画質「高」の影の範囲（影の画像を大きくして、遠くの影も同じ細かさで描く） */
+const SHADOW_EXTENT_HIGH = 90;
 
 /** 時間帯ごとの空と光 */
 interface Lighting {
@@ -112,9 +110,6 @@ export class GameScene {
   private readonly remoteHeadlights = Array.from({ length: REMOTE_HEADLIGHTS }, () => new THREE.SpotLight(0xfff0d0, 0, 120, 0.55, 0.5, 1));
   private readonly rain: THREE.LineSegments;
   private quality: Quality = 'standard';
-  private composer: EffectComposer | null = null;
-  private renderPass: RenderPass | null = null;
-  private readonly bloom: UnrealBloomPass;
   /** 夜の星（カメラと一緒に動かす） */
   private readonly stars = createStars();
   private readonly rainPositions: Float32Array;
@@ -130,7 +125,6 @@ export class GameScene {
     this.scene.environment = createReflections(this.renderer);
 
     this.scene.background = new THREE.Color(LIGHTING.day.sky);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.35, 0.35, 0.9);
     this.stars.visible = false;
     this.scene.add(this.stars);
     this.scene.fog = this.fog;
@@ -288,8 +282,6 @@ export class GameScene {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.composer?.setPixelRatio(this.renderer.getPixelRatio());
-    this.composer?.setSize(window.innerWidth, window.innerHeight);
   }
 
   /** 描画先の大きさが画面とずれていたら合わせる（スマホの向きやアドレスバーが変わったのに resize が来ないときのため） */
@@ -298,49 +290,29 @@ export class GameScene {
     if (size.x !== window.innerWidth || size.y !== window.innerHeight) this.resize(camera);
   }
 
-  /** 画質を変える（高: 光のにじみと細かい影） */
+  /** 画質を変える（高: 影を細かく、遠くまで描く） */
   setQuality(quality: Quality): void {
     this.quality = quality;
-    this.sun.shadow.mapSize.setScalar(quality === 'high' ? 4096 : 2048);
+    const high = quality === 'high';
+    this.sun.shadow.mapSize.setScalar(high ? 4096 : 2048);
+    const extent = high ? SHADOW_EXTENT_HIGH : SHADOW_EXTENT;
+    const cam = this.sun.shadow.camera;
+    cam.left = -extent;
+    cam.right = extent;
+    cam.top = extent;
+    cam.bottom = -extent;
+    cam.updateProjectionMatrix();
+    // 影の画像の大きさを変えたら、作り直させる
     this.sun.shadow.map?.dispose();
     this.sun.shadow.map = null;
-    if (quality === 'standard') {
-      this.composer?.dispose();
-      this.composer = null;
-    }
   }
 
   get currentQuality(): Quality {
     return this.quality;
   }
 
-  /** 高画質の描き方: 一度画像に描いて、明るい所（ライト・太陽）のにじみを足してから画面に出す */
-  private ensureComposer(): EffectComposer {
-    if (this.composer) return this.composer;
-    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-    // 画像に描くと画面の縁のギザギザ消し（アンチエイリアス）が効かないので、画像のほうで行う（samples）
-    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
-    const composer = new EffectComposer(this.renderer, target);
-    this.renderPass = new RenderPass(this.scene, new THREE.PerspectiveCamera());
-    composer.addPass(this.renderPass);
-    composer.addPass(this.bloom);
-    composer.addPass(new OutputPass());
-    composer.setPixelRatio(this.renderer.getPixelRatio());
-    composer.setSize(window.innerWidth, window.innerHeight);
-    this.composer = composer;
-    return composer;
-  }
-
   render(camera: THREE.Camera): void {
-    if (this.quality === 'high') {
-      const composer = this.ensureComposer();
-      this.renderPass!.camera = camera;
-      // 夜はライトのにじみを強く。昼は日の当たった白線などがにじまないよう、太陽のようにとても明るい所だけ
-      this.bloom.strength = this.night ? 0.45 : 0.25;
-      this.bloom.threshold = this.night ? 1.0 : 1.8;
-      composer.render();
-      return;
-    }
     this.renderer.render(this.scene, camera);
   }
+
 }
