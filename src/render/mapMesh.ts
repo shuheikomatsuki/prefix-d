@@ -6,6 +6,7 @@ import { RAVINE_DEPTH, type Terrain } from '../map/terrain';
 import { type ParsedMap, type Tile, DIR_OFFSET, roadShape, tileCenter } from '../map/tilemap';
 import { CONE_HALF_SIZE } from '../sim/physics';
 import { SignFactory } from './signs';
+import { buildTrees } from './vegetation';
 import { surfaceMaterial, worldUV } from './courseMaterials';
 import { TEXTURE_METERS, noise2 } from './courseTextures';
 
@@ -328,22 +329,8 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
     group.add(mesh);
   }
 
-  // 木
-  const trunkMat = new THREE.MeshLambertMaterial({ color: COLORS.trunk });
-  const leavesMat = new THREE.MeshLambertMaterial({ color: COLORS.leaves, flatShading: true });
-  for (const t of obstacles.trees) {
-    const trunkH = t.height * 0.4;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.trunkRadius, t.trunkRadius, trunkH, 8), trunkMat);
-    // 坂の上でも浮かないよう、根元を少し埋める
-    const base = terrain ? heightAt(t.x, t.z) - 0.5 : 0;
-    trunk.position.set(t.x, base + trunkH / 2, t.z);
-    trunk.castShadow = true;
-    group.add(trunk);
-    const leaves = new THREE.Mesh(new THREE.ConeGeometry(t.height * 0.35, t.height * 0.7, 8), leavesMat);
-    leaves.position.set(t.x, base + trunkH + t.height * 0.3, t.z);
-    leaves.castShadow = true;
-    group.add(leaves);
-  }
+  // 木（坂の上でも浮かないよう、根元を少し埋める）
+  group.add(buildTrees(obstacles.trees, (x, z) => (terrain ? heightAt(x, z) : 0.5)));
 
   const signs = new SignFactory();
   for (const sign of obstacles.signs) {

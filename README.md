@@ -291,6 +291,7 @@ npm run dev                             # 別のターミナルで
 - マップは `src/map/maps.ts` の文字グリッドを書き換えるだけで変更・追加できる（凡例は `src/map/tilemap.ts`）。標識やカーブのガードレールもここで指定する。
 - コースの路面（アスファルトの粒・ひび・タイヤの通る所の黒ずみ・補修跡）・地面・岩・コンクリート・白線のかすれの質感は、画像ファイルを使わずノイズから作る（`src/render/courseTextures.ts`）。材質と雨の日の濡れた見た目は `src/render/courseMaterials.ts`。
 - 峠の道ばたには、視線誘導標（カーブの外側に細かく、直線はまばら）・きついカーブの外側の矢印板・見通しの悪いカーブのカーブミラーを立てる（見た目だけで、ぶつからない）。置き場所は `src/map/roadside.ts`、見た目は `src/render/roadsideMesh.ts`。
+- 木は杉（円すいを何段も重ねた形）と広葉樹（丸い葉の塊を集めた形）を混ぜ、峠の道路の両脇には草の株と低い茂みを生やす（見た目だけ）。同じ形をまとめて描く（InstancedMesh）ので、数が多くても重くなりにくい。見た目は `src/render/vegetation.ts`、下草の置き場所は `src/map/roadside.ts` の `undergrowth`。
 - 中心線で描く道路のマップは、`MapDefinition.road` に直線（`straight`）と円弧（`arc`）の区間を並べて書く（`src/map/road.ts` の `RoadPiece`）。周回の道路は始まりに戻るよう長さを合わせる（合わないとエラーになる）。高さの差の足りない交差もエラーになる。
 
 ### 公開

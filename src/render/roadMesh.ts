@@ -20,7 +20,8 @@ import type { RoadGround } from '../map/roadTerrain';
 import { COLORS, mergeMixed, terrainGeometry } from './mapMesh';
 import { surfaceMaterial, worldUV } from './courseMaterials';
 import { buildRoadside } from './roadsideMesh';
-import { roadsideProps } from '../map/roadside';
+import { roadsideProps, undergrowth } from '../map/roadside';
+import { buildTrees, buildUndergrowth } from './vegetation';
 import { TEXTURE_METERS, hash2, noise2 } from './courseTextures';
 
 /** 橋・高架の床の厚さ [m] */
@@ -177,7 +178,13 @@ const W_BEAM: [number, number][] = Array.from({ length: 11 }, (_, k) => {
 });
 
 /** 中心線で描く道路のマップの見た目 */
-export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: RoadGround | null): THREE.Group {
+export function buildRoadMesh(
+  road: RoadModel,
+  obstacles: MapObstacles,
+  ground: RoadGround | null,
+  /** 下草を置かない所（ヘアピンの内側の近道の帯） */
+  avoid: (x: number, z: number) => boolean = () => false,
+): THREE.Group {
   const group = new THREE.Group();
   const highway = road.spec.scenery === 'highway';
   const circuit = road.spec.scenery === 'circuit';
@@ -432,30 +439,14 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
   for (const [i0, i1] of ranges(road, (i) => (road.flags[i] & FLAG_SUSPENSION) !== 0)) group.add(buildSuspension(road, i0, i1, lowY));
   if (highway) group.add(buildLamps(road));
 
-  // --- 木 ---
-  const trunks: THREE.BufferGeometry[] = [];
-  const leaves: THREE.BufferGeometry[] = [];
-  for (const t of obstacles.trees) {
-    const baseY = (ground ? ground.groundAt(t.x, t.z) : lowY) - 0.5;
-    const trunkH = t.height * 0.4;
-    const trunk = new THREE.CylinderGeometry(t.trunkRadius, t.trunkRadius, trunkH, 6);
-    trunk.translate(t.x, baseY + trunkH / 2, t.z);
-    trunks.push(trunk);
-    const cone = new THREE.ConeGeometry(t.height * 0.3, t.height * 0.7, 7);
-    cone.translate(t.x, baseY + trunkH + t.height * 0.3, t.z);
-    leaves.push(cone);
-  }
-  if (turn) {
-    const y = road.h[road.count - 1];
-    const cone = new THREE.ConeGeometry(3, 9, 8);
-    cone.translate(turn.cx, y + 6, turn.cz);
-    leaves.push(cone);
-    const trunk = new THREE.CylinderGeometry(0.35, 0.35, 2, 6);
-    trunk.translate(turn.cx, y + 1, turn.cz);
-    trunks.push(trunk);
-  }
-  if (trunks.length) add(mergeMixed(trunks), new THREE.MeshLambertMaterial({ color: COLORS.trunk }));
-  if (leaves.length) add(mergeMixed(leaves), new THREE.MeshLambertMaterial({ color: COLORS.leaves, flatShading: true }));
+  // --- 木と下草 ---
+  const baseY = (x: number, z: number) => (ground ? ground.groundAt(x, z) : lowY);
+  const trees = [...obstacles.trees];
+  if (turn) trees.push({ x: turn.cx, z: turn.cz, trunkRadius: 0.35, height: 9 });
+  const islandY = turn ? road.h[road.count - 1] + 0.8 : 0;
+  group.add(buildTrees(trees, (x, z) => (turn && x === turn.cx && z === turn.cz ? islandY : baseY(x, z))));
+  const plants = undergrowth(road, cuts, avoid);
+  if (plants.length) group.add(buildUndergrowth(plants, baseY));
   return group;
 }
 
