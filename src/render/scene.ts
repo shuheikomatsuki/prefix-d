@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Environment, TimeOfDay } from '../game/environment';
 import { createReflections } from './reflections';
+import { setCourseWetness } from './courseMaterials';
 import { REMOTE_HEADLIGHTS } from '../game/headlights';
 
 /** 影を描く範囲（車の周りだけ影を計算して軽くする） */
@@ -172,6 +173,8 @@ export class GameScene {
     this.lightLevel = env.time === 'night' ? 1 : env.time === 'morning' || env.weather !== 'clear' ? 0.35 : 0.15;
     this.applyHeadlight();
     this.rain.visible = env.weather === 'rain';
+    // 雨の日は路面が濡れてつやが出る（霧の日は少し湿っている）
+    setCourseWetness(env.weather === 'rain' ? 1 : env.weather === 'fog' ? 0.3 : 0);
   }
 
   /** 自分の車のヘッドライトをつける・消す */

@@ -1686,7 +1686,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, getSuddenDeath: () => suddenDeath, menu, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), startBattle: (index = battleIndex) => { battleIndex = index; startRace('battle', true); }, subtitles, stopRace, openRanking, rankingPanel, watchReplay: watchLastRace, exitReplay: () => exitReplay(), getReplay: () => replayView, net, remoteCars, touch, onlinePanel, cameraRig, sound },
+      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, getSuddenDeath: () => suddenDeath, menu, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), startBattle: (index = battleIndex) => { battleIndex = index; startRace('battle', true); }, subtitles, stopRace, openRanking, rankingPanel, watchReplay: watchLastRace, exitReplay: () => exitReplay(), getReplay: () => replayView, net, remoteCars, touch, onlinePanel, cameraRig, sound, setEnvironment: (time: TimeOfDay, weather: Weather) => setEnvironment(time, weather, false) },
     });
   }
 

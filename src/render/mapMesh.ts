@@ -6,6 +6,8 @@ import { RAVINE_DEPTH, type Terrain } from '../map/terrain';
 import { type ParsedMap, type Tile, DIR_OFFSET, roadShape, tileCenter } from '../map/tilemap';
 import { CONE_HALF_SIZE } from '../sim/physics';
 import { SignFactory } from './signs';
+import { surfaceMaterial, worldUV } from './courseMaterials';
+import { TEXTURE_METERS, noise2 } from './courseTextures';
 
 export const COLORS = {
   grass: 0x7fb069,
@@ -178,11 +180,15 @@ export function terrainGeometry(terrain: Pick<Terrain, 'grid'>, tint?: (x: numbe
   for (let k = 0; k < normal.count; k++) {
     const steep = Math.min(1, Math.max(0, (0.93 - normal.getY(k)) / 0.2));
     c.copy(grass).lerp(rock, steep);
-    tint?.(pos.getX(k), pos.getZ(k), steep, c);
+    // 数十 m の大きさのムラ（草の濃い所・枯れた所）で、同じ模様のくり返しを目立たなくする
+    const x = pos.getX(k);
+    const z = pos.getZ(k);
+    c.multiplyScalar(0.86 + noise2(x / 45, z / 45, 71) * 0.2 + noise2(x / 11, z / 11, 72) * 0.08);
+    tint?.(x, z, steep, c);
     c.toArray(colors, k * 3);
   }
   g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  return g;
+  return worldUV(g, TEXTURE_METERS.ground);
 }
 
 export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: Terrain | null = null): THREE.Group {
@@ -232,11 +238,12 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
       }),
     );
   } else grassGeo = flatRect(centerX, centerZ, width, depth, 0);
+  if (!terrain) worldUV(grassGeo, TEXTURE_METERS.ground);
   const grass = new THREE.Mesh(
     grassGeo,
     terrain
-      ? new THREE.MeshLambertMaterial({ vertexColors: true })
-      : new THREE.MeshLambertMaterial({ color: COLORS.grass }),
+      ? surfaceMaterial('ground', { vertexColors: true })
+      : surfaceMaterial('ground', { color: COLORS.grass }),
   );
   grass.receiveShadow = true;
   group.add(grass);
@@ -246,25 +253,24 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
 
   // 道路と白線
   const roads = buildRoadGeometry(map);
-  lift(roads.road);
-  if (roads.edgeLines) lift(roads.edgeLines);
-  if (roads.centerLines) lift(roads.centerLines);
-  // 草地・道路・白線は高さの差が小さいので、ポリゴンオフセットで手前に描いてちらつきを防ぐ
-  const layer = (n: number) => ({ polygonOffset: true, polygonOffsetFactor: -n, polygonOffsetUnits: -n });
+  worldUV(lift(roads.road), TEXTURE_METERS.asphalt);
+  if (roads.edgeLines) worldUV(lift(roads.edgeLines), TEXTURE_METERS.paint);
+  if (roads.centerLines) worldUV(lift(roads.centerLines), TEXTURE_METERS.paint);
+  // 草地・道路・白線は高さの差が小さいので、材質の layer（ポリゴンオフセット）で手前に描いてちらつきを防ぐ
   const roadMesh = new THREE.Mesh(
     roads.road,
-    new THREE.MeshLambertMaterial({ color: COLORS.road, ...layer(1) }),
+    surfaceMaterial('asphalt', { color: COLORS.road, layer: 1 }),
   );
   roadMesh.receiveShadow = true;
   group.add(roadMesh);
   if (roads.edgeLines) {
     group.add(
-      new THREE.Mesh(roads.edgeLines, new THREE.MeshLambertMaterial({ color: COLORS.line, ...layer(2) })),
+      new THREE.Mesh(roads.edgeLines, surfaceMaterial('paint', { color: COLORS.line, layer: 2 })),
     );
   }
   if (roads.centerLines) {
     group.add(
-      new THREE.Mesh(roads.centerLines, new THREE.MeshLambertMaterial({ color: COLORS.centerLine, ...layer(2) })),
+      new THREE.Mesh(roads.centerLines, surfaceMaterial('paint', { color: COLORS.centerLine, layer: 2 })),
     );
   }
 
@@ -316,7 +322,7 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
   }
 
   if (barriers.length) {
-    const mesh = new THREE.Mesh(lift(mergeGeometries(barriers)), new THREE.MeshLambertMaterial({ color: COLORS.concrete }));
+    const mesh = new THREE.Mesh(worldUV(lift(mergeGeometries(barriers)), TEXTURE_METERS.concrete), surfaceMaterial('concrete', { color: COLORS.concrete }));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
